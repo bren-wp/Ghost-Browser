@@ -47,7 +47,7 @@
         "installMode": "perUser",
         "displayLanguageSelector": false,
         "compression": "lzma",
-        "languages": ["English", "Croatian"]
+        "languages": ["English"]
       }
     }
   }

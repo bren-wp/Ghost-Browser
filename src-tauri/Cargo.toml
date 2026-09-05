@@ -1,0 +1,31 @@
+[package]
+name = "ghost-browser"
+version = "0.1.0"
+description = "Ghost Browser - privacy-first Windows browser"
+authors = ["Brendigo"]
+edition = "2024"
+rust-version = "1.85"
+
+[lib]
+name = "ghost_browser_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "ghost-browser"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+tauri = { version = "=2.11.5", features = ["unstable"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+url = "2.5"
+uuid = { version = "1.18", features = ["v4"] }
+parking_lot = "0.12"
+adblock = { version = "0.13.3", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling"] }
+
+[target.'cfg(windows)'.dependencies]
+webview2-com = "=0.38.2"
+windows = { version = "=0.61.3", features = ["Win32_Foundation", "Win32_System_Com"] }

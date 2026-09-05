@@ -1,0 +1,91 @@
+name: Ghost Browser Windows Build
+
+on:
+  push:
+    branches:
+      - main
+      - "feat/**"
+      - "fix/**"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    name: Build Windows x64
+    runs-on: windows-2025
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Check frontend
+        run: npm run build
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+
+      - name: Check Rust
+        run: cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
+
+      - name: Build Ghost Browser and NSIS installer
+        run: npm run tauri build -- --target x86_64-pc-windows-msvc --bundles nsis
+
+      - name: Collect portable and setup executables
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $release = "src-tauri/target/x86_64-pc-windows-msvc/release"
+          $out = "artifacts"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          $portable = Join-Path $release "ghost-browser.exe"
+          if (!(Test-Path $portable)) {
+            throw "Portable executable was not produced at $portable"
+          }
+          Copy-Item $portable (Join-Path $out "Ghost-Browser-Portable.exe")
+
+          $setup = Get-ChildItem (Join-Path $release "bundle/nsis") -Filter "*.exe" | Select-Object -First 1
+          if ($null -eq $setup) {
+            throw "NSIS setup executable was not produced"
+          }
+          Copy-Item $setup.FullName (Join-Path $out "Ghost-Browser-Setup.exe")
+
+          $portableHash = (Get-FileHash (Join-Path $out "Ghost-Browser-Portable.exe") -Algorithm SHA256).Hash.ToLower()
+          $setupHash = (Get-FileHash (Join-Path $out "Ghost-Browser-Setup.exe") -Algorithm SHA256).Hash.ToLower()
+          @(
+            "$portableHash  Ghost-Browser-Portable.exe",
+            "$setupHash  Ghost-Browser-Setup.exe"
+          ) | Set-Content (Join-Path $out "SHA256SUMS.txt") -Encoding ascii
+
+      - name: Upload Windows binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ghost-Browser-Windows-x64
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 30

@@ -39,8 +39,6 @@ pub const DOCUMENT_START_SCRIPT: &str = r#"
   const deny = () => Promise.reject(new DOMException('Blocked by Ghost Browser privacy policy', 'NotAllowedError'));
   try { Object.defineProperty(Navigator.prototype, 'doNotTrack', { get: () => '1', configurable: false }); } catch (_) {}
   try { Object.defineProperty(Navigator.prototype, 'globalPrivacyControl', { get: () => true, configurable: false }); } catch (_) {}
-  try { Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', { get: () => 4, configurable: false }); } catch (_) {}
-  try { if ('deviceMemory' in Navigator.prototype) Object.defineProperty(Navigator.prototype, 'deviceMemory', { get: () => 8, configurable: false }); } catch (_) {}
   try {
     const BlockedRTC = class { constructor() { throw new DOMException('WebRTC disabled by Ghost Browser', 'NotAllowedError'); } };
     Object.defineProperty(window, 'RTCPeerConnection', { value: BlockedRTC, configurable: false });

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+src-tauri/target/
+.vscode/
+.idea/
+*.pdb
+*.log
+.DS_Store

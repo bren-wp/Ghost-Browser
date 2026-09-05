@@ -3,9 +3,9 @@ use tauri::{AppHandle, Emitter, Manager, Webview};
 use webview2_com::{
     Microsoft::Web::WebView2::Win32::{
         COREWEBVIEW2_PERMISSION_STATE_DENY, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
-        ICoreWebView2_2, PermissionRequestedEventHandler, WebResourceRequestedEventHandler,
+        ICoreWebView2_2,
     },
-    take_pwstr,
+    CoTaskMemPWSTR, PermissionRequestedEventHandler, WebResourceRequestedEventHandler, take_pwstr,
 };
 use windows::{Win32::System::Com::IStream, core::{Interface, PWSTR}};
 
@@ -16,7 +16,7 @@ pub fn install(webview: &Webview, tab_id: String, app: AppHandle) -> Result<(), 
         let core2: ICoreWebView2_2 = match core.cast() { Ok(value) => value, Err(_) => return };
         let environment = match core2.Environment() { Ok(value) => value, Err(_) => return };
 
-        let filter = webview2_com::CoTaskMemPWSTR::from("*");
+        let filter = CoTaskMemPWSTR::from("*");
         if core.AddWebResourceRequestedFilter(*filter.as_ref().as_pcwstr(), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL).is_err() {
             return;
         }
@@ -41,8 +41,8 @@ pub fn install(webview: &Webview, tab_id: String, app: AppHandle) -> Result<(), 
                 .unwrap_or(false);
 
             if should_block {
-                let reason = webview2_com::CoTaskMemPWSTR::from("Blocked by Ghost Browser");
-                let headers = webview2_com::CoTaskMemPWSTR::from("Cache-Control: no-store\r\nContent-Type: text/plain; charset=utf-8");
+                let reason = CoTaskMemPWSTR::from("Blocked by Ghost Browser");
+                let headers = CoTaskMemPWSTR::from("Cache-Control: no-store\r\nContent-Type: text/plain; charset=utf-8");
                 let response = environment_for_filter.CreateWebResourceResponse(
                     None::<&IStream>,
                     403,

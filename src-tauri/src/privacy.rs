@@ -23,10 +23,13 @@ impl PrivacyEngine {
     }
 
     pub fn should_block(&self, url: &str, source_url: &str, resource_type: &str) -> bool {
-        let Ok(request) = Request::new(url, source_url, resource_type) else {
+        let Ok(request) = Request::new(url, source_url, resource_type, "GET") else {
             return false;
         };
-        self.engine.lock().check_network_request(&request).matched
+        self.engine
+            .lock()
+            .check_network_request(&request)
+            .should_block()
     }
 }
 

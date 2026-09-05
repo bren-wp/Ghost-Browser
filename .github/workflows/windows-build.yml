@@ -55,11 +55,14 @@ jobs:
       - name: Check frontend
         run: npm run build
 
-      - name: Normalize Rust formatting
-        run: cargo fmt --manifest-path src-tauri/Cargo.toml
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
       - name: Check Rust
         run: cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
+
+      - name: Test Rust
+        run: cargo test --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
 
       - name: Build Ghost Browser and NSIS installer
         run: npm run tauri build -- --target x86_64-pc-windows-msvc --bundles nsis

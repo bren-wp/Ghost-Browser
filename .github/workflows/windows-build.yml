@@ -41,6 +41,14 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
+      - name: Upload generated npm lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ghost-Browser-NPM-Lockfile
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Audit frontend dependencies
         run: npm run audit
 

@@ -9,6 +9,7 @@ interface TabSnapshot {
   loading: boolean;
   blocked: number;
   hasWebview: boolean;
+  discarded: boolean;
 }
 
 interface TabEvent {
@@ -17,38 +18,29 @@ interface TabEvent {
   url?: string;
   loading?: boolean;
   blocked?: number;
+  discarded?: boolean;
 }
 
-type SearchEngineId = "google" | "bing" | "brave";
-
-interface SearchEngine {
-  id: SearchEngineId;
-  label: string;
-  buildUrl: (query: string) => string;
+interface BrowserStats {
+  totalTabs: number;
+  liveWebviews: number;
+  discardedTabs: number;
+  maxLiveWebviews: number;
+  maxTabs: number;
 }
 
-const SEARCH_ENGINES: Record<SearchEngineId, SearchEngine> = {
-  google: {
-    id: "google",
-    label: "Google",
-    buildUrl: (query) => `https://www.google.com/search?q=${encodeURIComponent(query)}`,
-  },
-  bing: {
-    id: "bing",
-    label: "Bing",
-    buildUrl: (query) => `https://www.bing.com/search?q=${encodeURIComponent(query)}`,
-  },
-  brave: {
-    id: "brave",
-    label: "Brave Search",
-    buildUrl: (query) => `https://search.brave.com/search?q=${encodeURIComponent(query)}`,
-  },
-};
+interface PopupNavigation {
+  tabId: string;
+  url: string;
+}
 
-const SEARCH_ENGINE_STORAGE_KEY = "ghost.searchEngine";
-const DEFAULT_SEARCH_ENGINE: SearchEngineId = "google";
+interface ClosedTab {
+  title: string;
+  url: string | null;
+}
+
 const MAX_INPUT_LENGTH = 8192;
-
+const MAX_CLOSED_TABS = 25;
 const appWindow = getCurrentWindow();
 const app = document.querySelector<HTMLDivElement>("#app")!;
 
@@ -75,7 +67,7 @@ app.innerHTML = `
           <span id="connection-icon" class="connection-icon" aria-hidden="true">◈</span>
           <input id="omnibox" type="text" spellcheck="false" autocapitalize="off" autocomplete="off"
                  maxlength="8192" aria-label="Adresa i pretraživanje"
-                 placeholder="Pretraži Google ili upiši web-adresu" />
+                 placeholder="Pretraži web ili upiši web-adresu" />
           <button type="button" id="shield" class="shield" title="Ghost zaštita" aria-label="Ghost zaštita">
             <span class="shield-icon">◆</span><span id="blocked-count">0</span>
           </button>
@@ -93,13 +85,13 @@ app.innerHTML = `
         <form id="newtab-search" class="newtab-search" autocomplete="off">
           <span aria-hidden="true">⌕</span>
           <input id="newtab-input" type="text" maxlength="8192"
-                 placeholder="Pretraži Google ili upiši adresu" spellcheck="false" autocomplete="off"
+                 placeholder="Pretraži web ili upiši adresu" spellcheck="false" autocomplete="off"
                  aria-label="Pretraživanje ili web-adresa" />
         </form>
         <div class="privacy-cards">
-          <article><strong>Čistije stranice</strong><span>Reklame i poznati trackeri blokiraju se prije prikaza.</span></article>
-          <article><strong>Manje praćenja</strong><span>Parametri za praćenje uklanjaju se iz adresa koje otvarate.</span></article>
-          <article><strong>Privatnost uređaja</strong><span>Osjetljive dozvole i WebRTC ograničeni su po zadanom.</span></article>
+          <article><strong>Zaštita od praćenja</strong><span>Poznati trackeri i oglasne mreže blokiraju se prije prikaza.</span></article>
+          <article><strong>Čiste adrese</strong><span>Parametri za praćenje uklanjaju se prije navigacije.</span></article>
+          <article><strong>Memory Saver</strong><span>Neaktivni tabovi oslobađaju memoriju i obnavljaju se kada ih otvorite.</span></article>
         </div>
       </div>
     </section>
@@ -111,25 +103,20 @@ app.innerHTML = `
       </div>
       <div class="panel-status">
         <span class="status-dot"></span>
-        <div><strong>Zaštita je uključena</strong><p>Ghost Browser ne koristi vlastitu analitiku, oglase ni profile korisnika.</p></div>
+        <div><strong>Zaštita je uključena</strong><p>Ghost Browser nema vlastitu analitiku, oglase ni korisničke profile.</p></div>
       </div>
       <div class="setting"><div><strong>Reklame i trackeri</strong><span>Blokiranje poznatih mreža za oglašavanje i praćenje</span></div><span class="status-badge">Uključeno</span></div>
-      <div class="setting"><div><strong>WebRTC zaštita</strong><span>Smanjuje izlaganje mrežnih podataka web-stranicama</span></div><span class="status-badge">Uključeno</span></div>
-      <div class="setting"><div><strong>Zahtjevi za privatnost</strong><span>Do Not Track i Global Privacy Control</span></div><span class="status-badge">Uključeno</span></div>
+      <div class="setting"><div><strong>WebRTC zaštita</strong><span>Osjetljive mrežne i medijske dozvole blokirane su po zadanom</span></div><span class="status-badge">Uključeno</span></div>
+      <div class="setting"><div><strong>Privacy signali</strong><span>Do Not Track i Global Privacy Control</span></div><span class="status-badge">Uključeno</span></div>
       <div class="panel-actions"><button id="clear-data" class="primary-button">Obriši podatke pregledavanja</button></div>
     </aside>
 
     <aside class="app-menu" id="app-menu" aria-hidden="true">
       <button class="menu-item" id="menu-new-tab"><span>Novi tab</span><kbd>Ctrl+T</kbd></button>
+      <button class="menu-item" id="menu-reopen-tab"><span>Ponovno otvori zatvoreni tab</span><kbd>Ctrl+Shift+T</kbd></button>
       <div class="menu-separator"></div>
-      <label class="menu-field" for="search-engine">
-        <span>Zadana tražilica</span>
-        <select id="search-engine" aria-label="Zadana tražilica">
-          <option value="google">Google</option>
-          <option value="bing">Bing</option>
-          <option value="brave">Brave Search</option>
-        </select>
-      </label>
+      <button class="menu-item" id="menu-memory-saver"><span>Oslobodi memoriju neaktivnih tabova</span></button>
+      <div class="menu-status" id="memory-status">Memory Saver</div>
       <button class="menu-item" id="menu-clear-data"><span>Obriši podatke pregledavanja</span></button>
       <div class="menu-separator"></div>
       <div class="menu-footer"><strong>Ghost Browser</strong><span>Privatno pregledavanje za Windows</span></div>
@@ -147,20 +134,15 @@ const connectionIcon = document.querySelector<HTMLSpanElement>("#connection-icon
 const privacyPanel = document.querySelector<HTMLElement>("#privacy-panel")!;
 const appMenu = document.querySelector<HTMLElement>("#app-menu")!;
 const menuButton = document.querySelector<HTMLButtonElement>("#menu")!;
-const searchEngineSelect = document.querySelector<HTMLSelectElement>("#search-engine")!;
 const toast = document.querySelector<HTMLElement>("#toast")!;
+const memoryStatus = document.querySelector<HTMLElement>("#memory-status")!;
+const reopenButton = document.querySelector<HTMLButtonElement>("#menu-reopen-tab")!;
 
 let tabs: TabSnapshot[] = [];
 let activeTabId: string | null = null;
+let closedTabs: ClosedTab[] = [];
 let toastTimer: number | undefined;
 let overlayOpen = false;
-
-function storedSearchEngine(): SearchEngineId {
-  const stored = localStorage.getItem(SEARCH_ENGINE_STORAGE_KEY);
-  return stored === "google" || stored === "bing" || stored === "brave" ? stored : DEFAULT_SEARCH_ENGINE;
-}
-
-let searchEngineId = storedSearchEngine();
 
 const activeTab = () => tabs.find((tab) => tab.id === activeTabId);
 const escapeHtml = (value: string) =>
@@ -197,9 +179,11 @@ function renderTabs(): void {
     .map((tab) => {
       const active = tab.id === activeTabId ? " active" : "";
       const loading = tab.loading ? " loading" : "";
+      const discarded = tab.discarded ? " discarded" : "";
       const title = tab.title || "Novi tab";
-      return `<button class="tab${active}${loading}" data-tab="${tab.id}" title="${escapeHtml(title)}">
-        <span class="tab-favicon">${tab.loading ? "◌" : "◇"}</span>
+      const icon = tab.loading ? "◌" : tab.discarded ? "◫" : "◇";
+      return `<button class="tab${active}${loading}${discarded}" data-tab="${tab.id}" title="${escapeHtml(title)}">
+        <span class="tab-favicon">${icon}</span>
         <span class="tab-title">${escapeHtml(title)}</span>
         <span class="tab-close" data-close-tab="${tab.id}" aria-label="Zatvori tab">×</span>
       </button>`;
@@ -207,17 +191,19 @@ function renderTabs(): void {
     .join("");
 }
 
-function updateSearchPlaceholders(): void {
-  const label = SEARCH_ENGINES[searchEngineId].label;
-  omnibox.placeholder = `Pretraži ${label} ili upiši web-adresu`;
-  newtabInput.placeholder = `Pretraži ${label} ili upiši adresu`;
-  searchEngineSelect.value = searchEngineId;
+async function refreshMemoryStatus(): Promise<void> {
+  const stats = await invoke<BrowserStats>("browser_stats");
+  const sleeping = stats.discardedTabs;
+  memoryStatus.textContent = sleeping > 0
+    ? `${stats.totalTabs} tabova · ${stats.liveWebviews} aktivnih · ${sleeping} uspavanih`
+    : `${stats.totalTabs} tabova · ${stats.liveWebviews} aktivnih`;
+  reopenButton.disabled = closedTabs.length === 0;
 }
 
 function refreshChrome(): void {
   const tab = activeTab();
   const hasPage = Boolean(tab?.url);
-  newtab.classList.toggle("hidden", Boolean(tab?.hasWebview));
+  newtab.classList.toggle("hidden", Boolean(tab?.hasWebview || tab?.url));
   omnibox.value = tab?.url ?? "";
   blockedCount.textContent = String(tab?.blocked ?? 0);
   connectionIcon.textContent = tab?.url?.startsWith("https://") ? "◆" : tab?.url ? "!" : "◈";
@@ -226,6 +212,7 @@ function refreshChrome(): void {
   document.querySelector<HTMLButtonElement>("#forward")!.disabled = !hasPage;
   document.querySelector<HTMLButtonElement>("#reload")!.disabled = !hasPage;
   renderTabs();
+  void safeAction(refreshMemoryStatus);
 }
 
 async function setOverlay(open: boolean): Promise<void> {
@@ -259,6 +246,7 @@ async function toggleMenu(): Promise<void> {
   appMenu.classList.toggle("open", opening);
   appMenu.setAttribute("aria-hidden", String(!opening));
   menuButton.setAttribute("aria-expanded", String(opening));
+  if (opening) await refreshMemoryStatus();
   await setOverlay(opening);
 }
 
@@ -289,23 +277,31 @@ function normalizeInput(raw: string): { type: "url" | "search"; value: string } 
   return { type: "search", value };
 }
 
+async function resolveTarget(raw: string): Promise<string> {
+  const parsed = normalizeInput(raw);
+  if (parsed.type === "url") return parsed.value;
+  return invoke<string>("resolve_search_query", { query: parsed.value });
+}
+
+async function navigateTab(tabId: string, raw: string): Promise<void> {
+  const target = await resolveTarget(raw);
+  omnibox.blur();
+  await invoke("navigate_tab", { tabId, target });
+}
+
 async function navigateRaw(raw: string): Promise<void> {
   let tab = activeTab();
   if (!tab) tab = await createTab(true);
-  const parsed = normalizeInput(raw);
-  const target = parsed.type === "url" ? parsed.value : SEARCH_ENGINES[searchEngineId].buildUrl(parsed.value);
-  omnibox.blur();
-  await invoke("navigate_tab", { tabId: tab.id, target });
-}
-
-async function openUrlInNewTab(url: string): Promise<void> {
-  await createTab(true);
-  await navigateRaw(url);
+  await navigateTab(tab.id, raw);
 }
 
 async function closeTab(id: string): Promise<void> {
   const index = tabs.findIndex((tab) => tab.id === id);
   if (index < 0) return;
+  const closing = tabs[index];
+  closedTabs.push({ title: closing.title, url: closing.url });
+  if (closedTabs.length > MAX_CLOSED_TABS) closedTabs.shift();
+
   await invoke("close_tab", { tabId: id });
   tabs.splice(index, 1);
   if (activeTabId === id) {
@@ -317,10 +313,25 @@ async function closeTab(id: string): Promise<void> {
   refreshChrome();
 }
 
+async function reopenClosedTab(): Promise<void> {
+  const closed = closedTabs.pop();
+  if (!closed) return;
+  const tab = await createTab(true);
+  if (closed.url) await navigateTab(tab.id, closed.url);
+  await refreshMemoryStatus();
+}
+
 async function clearBrowsingData(): Promise<void> {
   await invoke("clear_browsing_data");
+  for (const tab of tabs) tab.blocked = 0;
   blockedCount.textContent = "0";
   showToast("Podaci pregledavanja su obrisani.");
+}
+
+async function freeInactiveMemory(): Promise<void> {
+  const discarded = await invoke<number>("discard_inactive_tabs");
+  await refreshMemoryStatus();
+  showToast(discarded > 0 ? `Oslobođena je memorija ${discarded} neaktivnih tabova.` : "Nema neaktivnih tabova za oslobađanje.");
 }
 
 async function syncViewport(): Promise<void> {
@@ -358,6 +369,11 @@ tabsEl.addEventListener("click", (event) => {
     await closeOverlays();
     activeTabId = tabButton.dataset.tab!;
     await invoke("set_active_tab", { tabId: activeTabId });
+    const tab = activeTab();
+    if (tab) {
+      tab.hasWebview = Boolean(tab.url);
+      tab.discarded = false;
+    }
     refreshChrome();
   });
 });
@@ -372,16 +388,9 @@ document.querySelector("#close-panel")!.addEventListener("click", () => void saf
 document.querySelector("#clear-data")!.addEventListener("click", () => void safeAction(clearBrowsingData));
 menuButton.addEventListener("click", () => void safeAction(toggleMenu));
 document.querySelector("#menu-new-tab")!.addEventListener("click", () => void safeAction(async () => { await closeOverlays(); await createTab(true); }));
+document.querySelector("#menu-reopen-tab")!.addEventListener("click", () => void safeAction(async () => { await closeOverlays(); await reopenClosedTab(); }));
+document.querySelector("#menu-memory-saver")!.addEventListener("click", () => void safeAction(async () => { await freeInactiveMemory(); await closeOverlays(); }));
 document.querySelector("#menu-clear-data")!.addEventListener("click", () => void safeAction(async () => { await clearBrowsingData(); await closeOverlays(); }));
-
-searchEngineSelect.addEventListener("change", () => {
-  const value = searchEngineSelect.value;
-  if (value !== "google" && value !== "bing" && value !== "brave") return;
-  searchEngineId = value;
-  localStorage.setItem(SEARCH_ENGINE_STORAGE_KEY, searchEngineId);
-  updateSearchPlaceholders();
-  showToast(`Zadana tražilica: ${SEARCH_ENGINES[searchEngineId].label}`);
-});
 
 document.querySelector("#minimize")!.addEventListener("click", () => void appWindow.minimize());
 document.querySelector("#maximize")!.addEventListener("click", () => void appWindow.toggleMaximize());
@@ -402,6 +411,9 @@ window.addEventListener("keydown", (event) => {
     void safeAction(closeOverlays);
     omnibox.focus();
     omnibox.select();
+  } else if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "t") {
+    event.preventDefault();
+    void safeAction(reopenClosedTab);
   } else if (event.ctrlKey && event.key.toLowerCase() === "t") {
     event.preventDefault();
     void safeAction(async () => { await closeOverlays(); await createTab(true); });
@@ -433,19 +445,26 @@ await listen<TabEvent>("ghost://tab-event", (event) => {
   if (update.url !== undefined) tab.url = update.url;
   if (update.loading !== undefined) tab.loading = update.loading;
   if (update.blocked !== undefined) tab.blocked = update.blocked;
-  tab.hasWebview = true;
+  if (update.discarded !== undefined) {
+    tab.discarded = update.discarded;
+    tab.hasWebview = !update.discarded && Boolean(tab.url);
+  }
   if (tab.id === activeTabId) refreshChrome();
-  else renderTabs();
+  else {
+    renderTabs();
+    void safeAction(refreshMemoryStatus);
+  }
 });
 
-await listen<string>("ghost://open-new-tab", (event) => {
-  void safeAction(() => openUrlInNewTab(event.payload));
+await listen<PopupNavigation>("ghost://open-current-tab", (event) => {
+  const payload = event.payload;
+  if (!payload?.tabId || !payload?.url) return;
+  void safeAction(() => navigateTab(payload.tabId, payload.url));
 });
 
 await listen<{ url?: string }>("ghost://download", () => {
   showToast("Preuzimanje je pokrenuto.");
 });
 
-updateSearchPlaceholders();
 await safeAction(syncViewport);
 await safeAction(async () => { await createTab(true); });

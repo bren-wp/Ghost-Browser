@@ -1106,3 +1106,19 @@ textarea:focus-visible {
     width: calc(100vw - 12px);
   }
 }
+
+.ui-icon {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.shield-svg {
+  width: 15px;
+  height: 15px;
+}

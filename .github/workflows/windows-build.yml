@@ -57,11 +57,27 @@ jobs:
           if (Select-String -Path "src-tauri/src/profile.rs" -Pattern "pub\s+(password|secret)\s*:" -Quiet) {
             throw "Plaintext secret field found in Ghost profile storage"
           }
+          foreach ($requiredFile in @("src/overlay.ts", "src-tauri/src/suggestions.rs", "src/browser-ui.css")) {
+            if (!(Test-Path $requiredFile)) {
+              throw "Required production module is missing: $requiredFile"
+            }
+          }
           $index = Get-Content "index.html" -Raw
-          foreach ($required in @("/src/main.ts", "/src/library.ts", "/src/styles.css", "/src/library.css")) {
+          foreach ($required in @("/src/main.ts", "/src/library.ts", "/src/styles.css", "/src/browser-ui.css", "/src/library.css")) {
             if (!$index.Contains($required)) {
               throw "Production index is missing $required"
             }
+          }
+          $main = Get-Content "src/main.ts" -Raw
+          if (!$main.Contains('"omnibox_suggestions"')) {
+            throw "Production shell is not wired to the local omnibox suggestion engine"
+          }
+          if (!$main.Contains('from "./overlay"')) {
+            throw "Production shell is not wired to overlay coordination"
+          }
+          $library = Get-Content "src/library.ts" -Raw
+          if (!$library.Contains('from "./overlay"')) {
+            throw "Library UI is not wired to overlay coordination"
           }
 
       - name: Check frontend
@@ -159,7 +175,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $tag = "v0.5.0"
           $title = "Ghost Browser v0.5.0"
-          $notes = "Production Windows build of Ghost Browser v0.5.0 with hardened browser interactions, tested omnibox resolution, local Favorites/History/Downloads, a Windows Credential Manager-protected Password Vault, privacy-first direct TLS Ghost Mail, strict tracking prevention, startup smoke testing and Memory Saver with a 320-tab scheduler. Includes Portable.exe, Setup.exe and SHA256 checksums."
+          $notes = "Production Windows build of Ghost Browser v0.5.0 with hardened browser interactions, a Chromium-based renderer, tested same-tab omnibox resolution, local Chrome-like suggestions from Favorites and History, local Favorites/History/Downloads, a Windows Credential Manager-protected Password Vault, privacy-first direct TLS Ghost Mail, strict tracking prevention, coordinated native overlays, startup smoke testing and Memory Saver with a 320-tab scheduler. Includes Portable.exe, Setup.exe and SHA256 checksums."
 
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {

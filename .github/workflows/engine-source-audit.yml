@@ -138,10 +138,12 @@ jobs:
           /chrome/browser/ui/webui/extensions/extensions_ui.cc
           /chrome/browser/resources/settings/about_page/about_page.ts
           /chrome/browser/resources/signin/managed_user_profile_notice/managed_user_profile_notice_value_prop.html.ts
+          /chrome/browser/resources/contextual_tasks/top_toolbar_logo.html.ts
           /components/components_chromium_strings.grd
           /components/strings/
           /components/vector_icons/chromium/
           /extensions/strings/
+          /ui/webui/resources/images/chrome_logo_dark.svg
           EOF
 
           git -C "$src" fetch --depth=1 --filter=blob:none origin "$revision"
@@ -160,6 +162,8 @@ jobs:
           git -C "$CHROMIUM_SRC" diff --check
           grep -F 'Customize Ghosium' "$CHROMIUM_SRC/chrome/app/chromium_strings.grd"
           grep -F 'alt="Ghosium logo"' "$CHROMIUM_SRC/chrome/browser/resources/signin/managed_user_profile_notice/managed_user_profile_notice_value_prop.html.ts"
+          test "$(grep -Fc 'chrome://theme/current-channel-logo@2x' "$CHROMIUM_SRC/chrome/browser/resources/contextual_tasks/top_toolbar_logo.html.ts")" -ge 2
+          grep -F 'aria-label="Ghosium"' "$CHROMIUM_SRC/ui/webui/resources/images/chrome_logo_dark.svg"
           if git -C "$CHROMIUM_SRC" status --porcelain=v1 -- third_party | grep -q .; then
             echo "third_party was modified" >&2
             exit 1

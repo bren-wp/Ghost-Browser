@@ -105,3 +105,60 @@ jobs:
               throw "Unapproved Ghosium product URL found in branding contract: $url"
             }
           }
+
+  pinned-source-smoke:
+    name: Apply branding to pinned Chromium source
+    needs: source-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout Ghosium fork tooling
+        uses: actions/checkout@v5
+
+      - name: Sparse checkout pinned Chromium source
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="${RUNNER_TEMP}/chromium-src"
+          revision="$(tr -d '\r\n ' < ENGINE_SOURCE_REVISION)"
+
+          git init "$src"
+          git -C "$src" remote add origin https://github.com/chromium/chromium.git
+          git -C "$src" config core.sparseCheckout true
+          mkdir -p "$src/.git/info"
+          cat > "$src/.git/info/sparse-checkout" <<'EOF'
+          /chrome/app/chromium_strings.grd
+          /chrome/app/settings_chromium_strings.grdp
+          /chrome/app/resources/
+          /chrome/app/theme/chromium/
+          /chrome/common/url_constants.h
+          /chrome/browser/ui/chrome_pages.cc
+          /chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome_page_handler.cc
+          /chrome/browser/ui/webui/extensions/extensions_ui.cc
+          /chrome/browser/resources/settings/about_page/about_page.ts
+          /components/components_chromium_strings.grd
+          /components/strings/
+          /components/vector_icons/chromium/
+          /extensions/strings/
+          EOF
+
+          git -C "$src" fetch --depth=1 --filter=blob:none origin "$revision"
+          git -C "$src" checkout --detach FETCH_HEAD
+          test "$(git -C "$src" rev-parse HEAD)" = "$revision"
+          echo "CHROMIUM_SRC=$src" >> "$GITHUB_ENV"
+
+      - name: Apply complete Ghosium source branding
+        shell: pwsh
+        run: ./scripts/apply-engine-branding.ps1 -SourceRoot $env:CHROMIUM_SRC
+
+      - name: Validate resulting source diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C "$CHROMIUM_SRC" diff --check
+          if git -C "$CHROMIUM_SRC" status --porcelain=v1 -- third_party | grep -q .; then
+            echo "third_party was modified" >&2
+            exit 1
+          fi
+          git -C "$CHROMIUM_SRC" status --short

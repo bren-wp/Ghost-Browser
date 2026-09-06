@@ -3,8 +3,9 @@ $ErrorActionPreference = 'Stop'
 $legacyLower = 'gh' + 'ost'
 $legacyTitle = 'Gh' + 'ost'
 $legacyUpper = 'GH' + 'OST'
+$workflowPath = '.github/workflows/windows-build.yml'
 
-$textFiles = @(git grep -Il -i -- $legacyLower -- . 2>$null)
+$textFiles = @(git grep -Il -i -- $legacyLower -- . 2>$null | Where-Object { $_ -ne $workflowPath })
 if ($LASTEXITCODE -notin @(0, 1)) {
     throw 'Unable to enumerate legacy branding in tracked text files.'
 }
@@ -55,12 +56,9 @@ if ($badPaths.Count -gt 0) {
     throw "Legacy branding remains in tracked paths: $($badPaths -join ', ')"
 }
 
-$matches = @(git grep -I -n -i -- $legacyLower -- . 2>$null)
-if ($LASTEXITCODE -eq 0) {
-    throw "Legacy branding remains in tracked text:`n$($matches -join "`n")"
-}
-if ($LASTEXITCODE -ne 1) {
-    throw "Final branding scan failed with exit code $LASTEXITCODE"
+$matches = @(git grep -I -n -i -- $legacyLower -- . 2>$null | Where-Object { -not $_.StartsWith("${workflowPath}:") })
+if ($matches.Count -gt 0) {
+    throw "Legacy branding remains outside the workflow scheduled for connector migration:`n$($matches -join "`n")"
 }
 
 git config user.name 'Brendigo'

@@ -1,25 +1,31 @@
-# Performance on weaker PCs
+# Ghosium Performance
 
-Ghosium aims to preserve Chromium compatibility and security while reducing unnecessary resource use.
+## Default behavior
 
-## Automatic mode selection
+Ghosium uses normal browser-engine resource behavior on systems with more than 8 GiB RAM.
 
-The C++ launcher reads physical RAM with the Windows memory API.
+## Automatic Low Memory mode
 
-- **8 GiB RAM or less:** Low Memory mode
-- **more than 8 GiB:** Balanced mode
+If Windows reports 8 GiB RAM or less, the launcher automatically applies:
 
-Low Memory mode adds upstream Chromium `--renderer-process-limit=6` and `--disk-cache-size=134217728`.
+- renderer process limit: 6
+- disk cache budget: 128 MiB
+
+This targets older or lower-memory PCs without disabling the sandbox, certificate validation or core process isolation.
 
 ## Manual overrides
 
-- `Ghosium-Browser.exe --ghosium-low-memory` forces Low Memory mode.
-- `Ghosium-Browser.exe --ghosium-balanced` forces normal Chromium resource behavior.
+- `--ghosium-low-memory` forces the constrained profile.
+- `--ghosium-balanced` forces normal engine resource behavior.
 
-## What is not disabled
+Caller-provided switches cannot override Ghosium-owned profile, bundled-component or language settings.
 
-Ghosium does not disable the Chromium sandbox, certificate validation, Site Isolation or web security to reduce memory. Those changes can appear faster in synthetic tests while materially weakening the browser.
+## Installer/Portable optimization
 
-## Practical recommendations
+Setup and Portable use zlib compression rather than a very large solid-compression dictionary. The trade-off is a somewhat larger EXE in exchange for faster packaging and lower decompression memory pressure on weaker PCs.
 
-On 4–8 GiB systems keep the number of simultaneously active media-heavy tabs low and enable Chromium's built-in Memory Saver controls when available in the shipped revision. Removing unused extensions can also reduce background processes.
+Portable mode extracts the runtime temporarily, waits for the browser to close and removes temporary runtime files afterward. User profile data remains persistent beside the Portable EXE.
+
+## Security rule
+
+Performance changes must not disable sandboxing, TLS/certificate validation, process isolation or other fundamental browser security boundaries.

@@ -1,24 +1,39 @@
-# Privacy Hardening Rationale
+# Ghosium Privacy Hardening
 
-Ghosium favors controls that reduce unnecessary browser-owned data flows without weakening core web security.
+## Principles
 
-## Launcher switches
+Ghosium privacy defaults aim to reduce unnecessary product/background network traffic without weakening fundamental browser security.
 
-- sync disabled
-- crash reporting disabled
-- background browser mode disabled
-- Domain Reliability reporting disabled
-- hyperlink auditing pings disabled
-- first-run/default-browser prompts disabled for a clean standalone distribution
+## Launcher defaults
 
-## Declarative filtering
+The native launcher disables:
 
-`extension/rules.json` blocks selected third-party tracker/advertising requests and strips common campaign/click identifiers from top-level navigations. DeclarativeNetRequest avoids a custom background JavaScript service worker.
+- browser sync
+- crash reporting
+- background browser mode
+- background networking subsystems
+- Domain Reliability reporting
+- hyperlink-auditing pings
+- first-run/default-browser nags
 
-## Search isolation
+## Declarative request protection
 
-Search terms are directed to Ghosium Search. Local-index mode keeps ranking inside the Ghosium search service. Optional provider mode is server-side and should be enabled only with a provider whose privacy/contract terms are acceptable.
+The bundled Ghosium Privacy component blocks selected well-known third-party advertising/analytics endpoints and strips common campaign/click identifiers from top-level navigations.
 
-## Security trade-offs rejected
+The component is declarative and script-free, reducing persistent extension runtime overhead.
 
-The launcher filters caller attempts to disable sandboxing, web security and certificate validation. It does not disable security features just to reduce memory or network activity.
+## What is intentionally not disabled
+
+- sandboxing
+- certificate validation
+- process isolation
+- ordinary user-requested HTTPS traffic
+- user-selected extensions
+
+## Product links
+
+Ghosium-controlled UI links point only to Ghosium-owned domains. Search results and sites explicitly entered by the user remain ordinary web content and can lead anywhere on the public web.
+
+## Update discipline
+
+Privacy hardening never replaces engine security updates. `ENGINE_REVISION` must be refreshed and fully smoke-tested whenever a newer supported engine baseline is adopted.

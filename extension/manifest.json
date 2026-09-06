@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Ghosium Privacy",
-  "version": "0.6.0",
-  "description": "Lokalni Ghosium novi tab i statična zaštita od poznatih third-party trackera.",
+  "version": "0.7.0",
+  "description": "Ghosium new tab and declarative privacy protection.",
   "permissions": [
     "declarativeNetRequest"
   ],

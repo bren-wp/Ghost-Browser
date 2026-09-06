@@ -2,13 +2,19 @@
   {
     "url": "https://ghosium.com/",
     "title": "Ghosium Browser",
-    "description": "Ghosium Browser — Chromium kompatibilnost, privatnost i Ghosium Search.",
-    "tags": ["ghosium", "browser", "privacy", "chromium"]
+    "description": "Ghosium Browser — fast, private browsing with Ghosium Search and Ghosium protections.",
+    "tags": ["ghosium", "browser", "privacy", "security"]
   },
   {
     "url": "https://search.ghosium.com/",
     "title": "Ghosium Search",
-    "description": "Privatno Ghosium pretraživanje i lokalni JSON indeks.",
+    "description": "Private Ghosium search with a first-party JSON index.",
     "tags": ["ghosium", "search", "privacy"]
+  },
+  {
+    "url": "https://store.ghosium.com/",
+    "title": "Ghosium Store",
+    "description": "Official Ghosium extension catalog.",
+    "tags": ["ghosium", "store", "extensions", "security"]
   }
 ]

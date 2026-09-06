@@ -16,7 +16,7 @@ function e(string $value): string
     return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 ?><!doctype html>
-<html lang="hr">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -29,15 +29,15 @@ function e(string $value): string
 </head>
 <body class="<?= $query === '' ? 'home' : 'results-page' ?>">
   <header class="topbar">
-    <a class="brand" href="/" aria-label="Ghosium Search početna">
+    <a class="brand" href="/" aria-label="Ghosium Search home">
       <img src="/assets/ghosium-mark.svg" alt="" width="34" height="34">
       <span>Ghosium <strong>Search</strong></span>
     </a>
     <?php if ($query !== ''): ?>
       <form class="top-search" method="get" action="/" role="search">
-        <label class="sr-only" for="top-q">Pretraži web</label>
+        <label class="sr-only" for="top-q">Search the web</label>
         <input id="top-q" name="q" type="search" value="<?= e($query) ?>" autocomplete="off" maxlength="180">
-        <button type="submit">Pretraži</button>
+        <button type="submit">Search</button>
       </form>
     <?php endif; ?>
   </header>
@@ -48,21 +48,21 @@ function e(string $value): string
         <img class="hero-mark" src="/assets/ghosium-mark.svg" alt="" width="88" height="88">
         <p class="eyebrow">PRIVATE BY DESIGN</p>
         <h1>Ghosium <span>Search</span></h1>
-        <p class="lead">Pretraživanje kroz Ghosium endpoint bez aplikacijskih oglasa, korisničkih profila i pohrane sirovih upita u Ghosium aplikaciji.</p>
+        <p class="lead">Search through the Ghosium endpoint without application advertising profiles or raw-query storage in the Ghosium application.</p>
         <form class="hero-search" method="get" action="/" role="search">
           <label class="sr-only" for="q">Ghosium Search</label>
-          <input id="q" name="q" type="search" autofocus autocomplete="off" maxlength="180" placeholder="Pretraži web">
-          <button type="submit">Pretraži</button>
+          <input id="q" name="q" type="search" autofocus autocomplete="off" maxlength="180" placeholder="Search the web">
+          <button type="submit">Search</button>
         </form>
-        <p class="privacy-note">Bez kolačića za praćenje · bez korisničkog računa · JSON indeks na vašem serveru</p>
+        <p class="privacy-note">No tracking cookies · no account required · first-party JSON index</p>
       </section>
     <?php else: ?>
       <section class="results" aria-labelledby="results-title">
-        <p class="count" id="results-title"><?= count($results) ?> rezultata za <strong><?= e($query) ?></strong></p>
+        <p class="count" id="results-title"><?= count($results) ?> results for <strong><?= e($query) ?></strong></p>
         <?php if ($results === []): ?>
           <article class="empty">
-            <h2>Nema rezultata u trenutnom indeksu.</h2>
-            <p>Dodajte više seed domena i pokrenite crawler ili u privatnoj konfiguraciji uključite vlastiti kompatibilni JSON API provider.</p>
+            <h2>No results in the current index.</h2>
+            <p>Add more seed domains and run the crawler, or enable your own compatible server-side JSON provider.</p>
           </article>
         <?php endif; ?>
         <?php foreach ($results as $result):
@@ -80,7 +80,16 @@ function e(string $value): string
 
   <footer>
     <span>Ghosium Search</span>
-    <a href="/health.php">Status</a>
+    <nav aria-label="Ghosium links">
+      <a href="https://ghosium.com/">Home</a>
+      <a href="https://store.ghosium.com/">Store</a>
+      <a href="https://ghosium.com/support">Support</a>
+      <a href="https://ghosium.com/security">Security</a>
+      <a href="https://ghosium.com/legal/terms">Terms</a>
+      <a href="https://ghosium.com/legal/privacy-policy">Privacy</a>
+      <a href="https://ghosium.com/legal/licenses">Licenses</a>
+      <a href="/health.php">Status</a>
+    </nav>
   </footer>
 </body>
 </html>

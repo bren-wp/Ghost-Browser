@@ -1,36 +1,37 @@
 # Building Ghosium Browser
 
-## Production distribution build
+## Standard Windows release build
 
-The supported release path is `.github/workflows/windows-build.yml` on GitHub-hosted Windows x64. It:
+The standard CI path builds the Ghosium distribution without compiling the entire upstream engine source tree on a hosted runner.
 
-1. validates branding, architecture, manifests and the Ghosium Search endpoint;
-2. validates all PHP/JSON files in `search-web/` on Linux;
-3. downloads the exact numeric Chromium snapshot from official Chromium infrastructure;
-4. records upstream version/source/hash metadata;
-5. compiles `launcher/main.cpp` with MSVC C++20 and Windows binary mitigations;
-6. runs launcher self-test and Chromium headless smoke test;
-7. creates Portable ZIP, NSIS Setup EXE and shared-hosting Search ZIP;
-8. computes SHA-256 checksums;
-9. publishes a normal stable GitHub Release from `main`;
-10. mirrors the verified files to GitHub Packages/GHCR.
+1. Read `VERSION` and pinned `ENGINE_REVISION`.
+2. Validate Ghosium manifests, product links, PHP/JSON web sources and C++-only desktop code.
+3. Download the pinned official Windows engine snapshot from its upstream source.
+4. Verify archive/source metadata and obtain the corresponding upstream license.
+5. Assemble the Ghosium runtime and rename the upstream entry executable to `Ghosium-Engine.exe`.
+6. Compile `launcher/main.cpp` using Microsoft C++20 with Windows exploit mitigations.
+7. Run launcher and headless engine smoke tests.
+8. Build `Ghosium-Browser-Setup.exe` and `Ghosium-Browser-Portable.exe` using NSIS.
+9. Publish only those two EXE files as explicit GitHub Release assets. GitHub supplies source-code archives for the tag automatically.
 
 ## Desktop source language
 
-Do not add Rust, TypeScript, JavaScript, Electron, Tauri or WebView application code to the desktop browser layer. The Ghosium-owned executable layer is C++20. HTML/CSS/JSON are allowed as script-free browser resources.
+Ghosium-owned desktop executable source is C++20 only. HTML, CSS and JSON are presentation/configuration assets. PHP is used only by the separate shared-hosting Search/Store services.
 
-`search-web/` is a separate server-side PHP application because its deployment target is shared hosting.
+## Local Windows build
 
-## Local C++ launcher build
+Requirements:
 
-On Windows with Visual Studio C++ tools:
+- Windows 10/11 x64
+- Visual Studio C++ toolchain
+- NSIS
+- PowerShell
+- enough disk space for the pinned engine archive and staging directory
 
-```powershell
-cl.exe /std:c++20 /O2 /W4 /EHsc /DUNICODE /D_UNICODE /GS /sdl /guard:cf /MT launcher\main.cpp /Fe:Ghosium-Browser.exe /link /SUBSYSTEM:WINDOWS /DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA /GUARD:CF /CETCOMPAT user32.lib shell32.lib
-```
+Use the workflow as the canonical reference for compiler/linker flags and packaging definitions.
 
-A usable runtime also requires the pinned Chromium snapshot plus `extension/` and `search-provider/` beside the launcher.
+## Full-source engine build
 
-## Full Chromium source fork
+Deeper product rebranding, internal engine string replacement and first-party extension-store installation require a full upstream source checkout and source patching. That path is intentionally separate from the lightweight release build because the full engine toolchain requires substantially more disk/RAM than a normal hosted runner.
 
-A future fully source-branded fork may apply Ghosium patches directly inside Chromium and build with Chromium's `depot_tools`/GN/Ninja toolchain. That path is intentionally separate from the normal GitHub-hosted distribution build because full Chromium builds require far more disk, RAM and CPU time.
+Required upstream notices/licenses must remain intact regardless of branding level.

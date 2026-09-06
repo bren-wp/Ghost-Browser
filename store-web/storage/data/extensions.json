@@ -1,0 +1,20 @@
+[
+  {
+    "id": "ghosium-privacy",
+    "name": "Ghosium Privacy",
+    "version": "0.7.0",
+    "status": "built_in",
+    "description": "Built-in declarative tracker protection and Ghosium new-tab experience.",
+    "publisher": "Brendigo",
+    "homepage": "https://ghosium.com/security"
+  },
+  {
+    "id": "ghosium-search",
+    "name": "Ghosium Search",
+    "version": "0.7.0",
+    "status": "built_in",
+    "description": "Built-in Ghosium Search integration for the browser search experience.",
+    "publisher": "Brendigo",
+    "homepage": "https://search.ghosium.com/"
+  }
+]

@@ -16,7 +16,8 @@ use uuid::Uuid;
 const MAX_URL_LENGTH: usize = 8192;
 const MAX_TABS: usize = 512;
 const MAX_LIVE_WEBVIEWS: usize = 8;
-const PRIVACY_BROWSER_ARGS: &str = "--disable-sync --no-first-run --disable-default-apps --disable-domain-reliability --disable-background-networking --disable-component-update --disable-breakpad --disable-crash-reporter";
+const PRIVACY_BROWSER_ARGS: &str =
+    "--disable-sync --no-first-run --disable-default-apps --disable-domain-reliability --disable-breakpad --disable-crash-reporter";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

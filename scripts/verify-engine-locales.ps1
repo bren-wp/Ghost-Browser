@@ -31,8 +31,10 @@ function Test-LegacyBrowserBrand {
 
   # Detect standalone names and grammatical lowercase suffixes such as
   # Chromiuma/Chromiumu while avoiding unrelated uppercase compounds such as
-  # ChromiumOS/ChromeOS, which are separate upstream platform names.
-  return $Text -match '(?i:\bGoogle Chrome\b)|\bChromium(?=\p{Ll}|\b)|\bChrome(?=\p{Ll}|\b)'
+  # ChromiumOS/ChromeOS, which are separate upstream platform names. PowerShell
+  # -match is case-insensitive by default, so use -cmatch here; only the Google
+  # Chrome phrase gets an explicit scoped case-insensitive modifier.
+  return $Text -cmatch '(?i:\bGoogle Chrome\b)|\bChromium(?=\p{Ll}|\b)|\bChrome(?=\p{Ll}|\b)'
 }
 
 function Assert-XtbBundleBranding {

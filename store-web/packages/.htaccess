@@ -1,0 +1,9 @@
+Options -Indexes
+AddType application/x-chrome-extension .crx
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "no-referrer"
+  Header always set Cache-Control "public, max-age=31536000, immutable"
+  Header always set Content-Security-Policy "default-src 'none'; sandbox"
+</IfModule>

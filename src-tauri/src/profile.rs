@@ -177,22 +177,40 @@ fn write_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-fn load_profile(path: &Path) -> ProfileData {
-    let Ok(bytes) = fs::read(path) else {
-        return ProfileData::default();
-    };
+fn parse_profile(bytes: &[u8]) -> Option<ProfileData> {
+    let mut data = serde_json::from_slice::<ProfileData>(bytes).ok()?;
+    data.version = PROFILE_VERSION;
+    Some(data)
+}
 
-    match serde_json::from_slice::<ProfileData>(&bytes) {
-        Ok(mut data) => {
-            data.version = PROFILE_VERSION;
-            data
-        }
-        Err(_) => {
+fn restore_backup(path: &Path) -> Option<ProfileData> {
+    let backup = path.with_extension("json.bak");
+    let bytes = fs::read(&backup).ok()?;
+    let data = parse_profile(&bytes)?;
+
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if fs::copy(&backup, path).is_ok() {
+        let _ = fs::remove_file(&backup);
+    }
+    Some(data)
+}
+
+fn load_profile(path: &Path) -> ProfileData {
+    match fs::read(path) {
+        Ok(bytes) => {
+            if let Some(data) = parse_profile(&bytes) {
+                return data;
+            }
+
             let corrupt = path.with_extension(format!("corrupt-{}.json", now_epoch()));
             let _ = fs::rename(path, corrupt);
-            ProfileData::default()
         }
+        Err(_) => {}
     }
+
+    restore_backup(path).unwrap_or_default()
 }
 
 impl ProfileStore {
@@ -534,6 +552,25 @@ pub async fn clear_downloads(store: tauri::State<'_, ProfileStore>) -> Result<()
 mod tests {
     use super::*;
 
+    fn temp_profile_path(name: &str) -> PathBuf {
+        env::temp_dir()
+            .join(format!("ghost-browser-{name}-{}", Uuid::new_v4()))
+            .join("profile.json")
+    }
+
+    fn sample_profile() -> ProfileData {
+        ProfileData {
+            version: PROFILE_VERSION,
+            bookmarks: vec![Bookmark {
+                id: Uuid::new_v4().to_string(),
+                title: "Ghost test".into(),
+                url: "https://example.com/".into(),
+                created_at: 1,
+            }],
+            ..ProfileData::default()
+        }
+    }
+
     #[test]
     fn origin_is_reduced_to_scheme_host_and_port() {
         assert_eq!(
@@ -550,5 +587,38 @@ mod tests {
     #[test]
     fn javascript_urls_are_rejected() {
         assert!(normalize_http_url("javascript:alert(1)").is_err());
+    }
+
+    #[test]
+    fn missing_primary_profile_recovers_from_valid_backup() {
+        let path = temp_profile_path("backup-missing-primary");
+        let parent = path.parent().unwrap();
+        fs::create_dir_all(parent).unwrap();
+        let backup = path.with_extension("json.bak");
+        fs::write(&backup, serde_json::to_vec_pretty(&sample_profile()).unwrap()).unwrap();
+
+        let loaded = load_profile(&path);
+        assert_eq!(loaded.bookmarks.len(), 1);
+        assert!(path.exists());
+        assert!(!backup.exists());
+
+        let _ = fs::remove_dir_all(parent.parent().unwrap_or(parent));
+    }
+
+    #[test]
+    fn corrupt_primary_profile_recovers_from_valid_backup() {
+        let path = temp_profile_path("backup-corrupt-primary");
+        let parent = path.parent().unwrap();
+        fs::create_dir_all(parent).unwrap();
+        fs::write(&path, b"{not valid json").unwrap();
+        let backup = path.with_extension("json.bak");
+        fs::write(&backup, serde_json::to_vec_pretty(&sample_profile()).unwrap()).unwrap();
+
+        let loaded = load_profile(&path);
+        assert_eq!(loaded.bookmarks.len(), 1);
+        assert!(path.exists());
+        assert!(!backup.exists());
+
+        let _ = fs::remove_dir_all(parent.parent().unwrap_or(parent));
     }
 }

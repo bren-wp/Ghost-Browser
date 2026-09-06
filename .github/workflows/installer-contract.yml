@@ -121,7 +121,7 @@ jobs:
               r'CopyFiles /SILENT "$EXEPATH" "$INSTDIR\${INSTALLED_SETUP}"'.replace(r'\"', '"'),
               r'CopyFiles /SILENT "$EXEPATH" "${CLEANUP_SETUP}"'.replace(r'\"', '"'),
               "Exec '\"${CLEANUP_SETUP}\" /CLEANUP'",
-              "Exec '\"${CLEANUP_SETUP}\" /CLEANUP /S'",
+              "Exec '\"${CLEANUP_SETUP}\" /S /CLEANUP'",
               r'IfFileExists "$INSTDIR\${INSTALL_MARKER}" 0 unsafe_install_location'.replace(r'\"', '"'),
               r'IfFileExists "$INSTDIR\${INSTALLED_SETUP}" 0 unsafe_install_location'.replace(r'\"', '"'),
               'install_location_verified unsafe_install_location',
@@ -130,11 +130,16 @@ jobs:
               '"UninstallString"',
               '"QuietUninstallString"',
               '/UNINSTALL',
-              '/UNINSTALL /S',
+              '/S /UNINSTALL',
+              'SetErrorLevel 0',
           ]
           missing = [needle for needle in required if needle not in text]
           if missing:
               raise SystemExit('Missing same-Setup uninstall invariant(s):\n' + '\n'.join(missing))
+          if '/UNINSTALL /S' in text:
+              raise SystemExit('Silent uninstall switches are in the unsafe NSIS order; /S must precede /UNINSTALL')
+          if '/CLEANUP /S' in text:
+              raise SystemExit('Silent cleanup switches are in the unsafe NSIS order; /S must precede /CLEANUP')
           PY
 
       - name: Verify Windows release performs real installer smoke test
@@ -145,7 +150,7 @@ jobs:
           grep -Fq './scripts/build-native-launcher.ps1' "$workflow"
           grep -Fq './scripts/smoke-test-windows-installer.ps1' "$workflow"
           grep -Fq 'Ghosium-Browser-Setup.exe' scripts/smoke-test-windows-installer.ps1
-          grep -Fq '/UNINSTALL' scripts/smoke-test-windows-installer.ps1
+          grep -Fq "@('/S', '/UNINSTALL')" scripts/smoke-test-windows-installer.ps1
           grep -Fq 'UninstallString' scripts/smoke-test-windows-installer.ps1
 
       - name: Verify full-source uninstall contract

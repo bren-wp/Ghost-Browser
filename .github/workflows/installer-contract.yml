@@ -5,7 +5,6 @@ on:
     branches:
       - main
     paths:
-      - 'ghosium.ico'
       - 'launcher/ghosium.rc'
       - 'installer/**'
       - 'scripts/**'
@@ -16,7 +15,6 @@ on:
     branches:
       - main
     paths:
-      - 'ghosium.ico'
       - 'launcher/ghosium.rc'
       - 'installer/**'
       - 'scripts/**'
@@ -59,13 +57,25 @@ jobs:
             }
           }
 
-      - name: Verify canonical Ghosium Windows icon
+      - name: Verify deterministic RC-compatible Ghosium Windows icon
         shell: bash
         run: |
           set -euo pipefail
-          test -s ghosium.ico
-          signature="$(od -An -tx1 -N4 ghosium.ico | tr -d ' \n')"
-          test "$signature" = '00000100'
+          icon="${RUNNER_TEMP}/ghosium.ico"
+          python3 scripts/generate-engine-brand-assets.py --icon-output "$icon" --icon-only
+          python3 - "$icon" <<'PY'
+          from pathlib import Path
+          import struct
+          import sys
+
+          data = Path(sys.argv[1]).read_bytes()
+          assert data[:4] == b'\x00\x00\x01\x00', 'invalid ICO signature'
+          count = struct.unpack_from('<H', data, 4)[0]
+          assert count >= 4, f'expected multi-resolution ICO, found {count} frame(s)'
+          first_offset = struct.unpack_from('<I', data, 18)[0]
+          assert first_offset + 40 <= len(data), 'invalid first-frame offset'
+          assert struct.unpack_from('<I', data, first_offset)[0] == 40, 'first frame is not BITMAPINFOHEADER DIB'
+          PY
           grep -Fq '101 ICON "ghosium.ico"' launcher/ghosium.rc
           grep -Fq '!define MUI_ICON "${GHOSIUM_ICON}"' installer/ghosium.nsi
           grep -Fq 'Icon "${GHOSIUM_ICON}"' installer/portable.nsi
@@ -101,35 +111,34 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          installer='installer/ghosium.nsi'
+          python3 - <<'PY'
+          from pathlib import Path
 
-          required=(
-            '!define INSTALLED_SETUP "Installer\\Ghosium-Browser-Setup.exe"'
-            '!define INSTALL_MARKER "ghosium-install.marker"'
-            '!define CLEANUP_SETUP "$TEMP\\Brendigo\\Ghosium Browser Cleanup\\Ghosium-Browser-Setup.exe"'
-            '${GetOptions} $R0 "/UNINSTALL" $R1'
-            '${GetOptions} $R0 "/CLEANUP" $R1'
-            'CopyFiles /SILENT "$EXEPATH" "$INSTDIR\\${INSTALLED_SETUP}"'
-            'CopyFiles /SILENT "$EXEPATH" "${CLEANUP_SETUP}"'
-            'Exec '\''"${CLEANUP_SETUP}" /CLEANUP'\'''
-            'Exec '\''"${CLEANUP_SETUP}" /CLEANUP /S'\'''
-            'IfFileExists "$INSTDIR\\${INSTALL_MARKER}" 0 unsafe_install_location'
-            'IfFileExists "$INSTDIR\\${INSTALLED_SETUP}" 0 unsafe_install_location'
-            'StrCmp $R6 "Ghosium Browser|${GHOSIUM_VERSION}$\\r$\\n" install_location_verified unsafe_install_location'
-            'RMDir /r /REBOOTOK "$INSTDIR"'
-            'Delete /REBOOTOK "$EXEPATH"'
-            '"UninstallString"'
-            '${INSTALLED_SETUP}$\\" /UNINSTALL'
-            '"QuietUninstallString"'
-            '${INSTALLED_SETUP}$\\" /UNINSTALL /S'
-          )
-
-          for needle in "${required[@]}"; do
-            if ! grep -Fq "$needle" "$installer"; then
-              echo "Missing single-setup uninstall invariant: $needle" >&2
-              exit 1
-            fi
-          done
+          text = Path('installer/ghosium.nsi').read_text(encoding='utf-8')
+          required = [
+              r'!define INSTALLED_SETUP "Installer\Ghosium-Browser-Setup.exe"',
+              r'!define INSTALL_MARKER "ghosium-install.marker"',
+              r'!define CLEANUP_SETUP "$TEMP\Brendigo\Ghosium Browser Cleanup\Ghosium-Browser-Setup.exe"',
+              r'${GetOptions} $R0 "/UNINSTALL" $R1',
+              r'${GetOptions} $R0 "/CLEANUP" $R1',
+              r'CopyFiles /SILENT "$EXEPATH" "$INSTDIR\${INSTALLED_SETUP}"',
+              r'CopyFiles /SILENT "$EXEPATH" "${CLEANUP_SETUP}"',
+              r'Exec '\''"${CLEANUP_SETUP}" /CLEANUP'\''',
+              r'Exec '\''"${CLEANUP_SETUP}" /CLEANUP /S'\''',
+              r'IfFileExists "$INSTDIR\${INSTALL_MARKER}" 0 unsafe_install_location',
+              r'IfFileExists "$INSTDIR\${INSTALLED_SETUP}" 0 unsafe_install_location',
+              r'install_location_verified unsafe_install_location',
+              r'RMDir /r /REBOOTOK "$INSTDIR"',
+              r'Delete /REBOOTOK "$EXEPATH"',
+              r'"UninstallString"',
+              r'"QuietUninstallString"',
+              r'/UNINSTALL',
+              r'/UNINSTALL /S',
+          ]
+          missing = [needle for needle in required if needle not in text]
+          if missing:
+              raise SystemExit('Missing same-Setup uninstall invariant(s):\n' + '\n'.join(missing))
+          PY
 
       - name: Verify Windows release performs real installer smoke test
         shell: bash

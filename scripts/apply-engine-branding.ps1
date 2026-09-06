@@ -100,6 +100,8 @@ $extensionStrings = Join-Path $sourceRootResolved 'extensions/strings/extensions
 $urlConstants = Join-Path $sourceRootResolved 'chrome/common/url_constants.h'
 $brandingFile = Join-Path $sourceRootResolved 'chrome/app/theme/chromium/BRANDING'
 $managedProfileNotice = Join-Path $sourceRootResolved 'chrome/browser/resources/signin/managed_user_profile_notice/managed_user_profile_notice_value_prop.html.ts'
+$contextualToolbarLogo = Join-Path $sourceRootResolved 'chrome/browser/resources/contextual_tasks/top_toolbar_logo.html.ts'
+$sharedDarkLogo = Join-Path $sourceRootResolved 'ui/webui/resources/images/chrome_logo_dark.svg'
 
 foreach ($required in @(
   $chromiumStrings,
@@ -108,7 +110,9 @@ foreach ($required in @(
   $extensionStrings,
   $urlConstants,
   $brandingFile,
-  $managedProfileNotice
+  $managedProfileNotice,
+  $contextualToolbarLogo,
+  $sharedDarkLogo
 )) {
   if (!(Test-Path $required -PathType Leaf)) {
     throw "Pinned source layout changed; expected file missing: $required"
@@ -133,10 +137,11 @@ Set-GritMessage -Path $settingsStrings -MessageId 'IDS_SETTINGS_GET_HELP_USING_C
 
 Set-GritMessage -Path $componentStrings -MessageId 'IDS_SHORT_PRODUCT_LOGO_ALT_TEXT' -Value 'Ghosium logo'
 
-# A small number of WebUI templates contain literal accessibility branding
-# instead of GRIT strings. Keep these targeted so copyright/source comments are
-# never globally rewritten.
+# A small number of WebUI templates contain literal accessibility/product logo
+# branding instead of GRIT strings. Keep these replacements narrowly targeted.
 Replace-RequiredLiteral -Path $managedProfileNotice -OldValue 'alt="Chrome logo"' -NewValue 'alt="Ghosium logo"'
+Replace-RequiredLiteral -Path $contextualToolbarLogo -OldValue 'src="chrome://resources/cr_components/searchbox/icons/chrome_product.svg"' -NewValue 'src="chrome://theme/current-channel-logo@2x"'
+Replace-RequiredLiteral -Path $contextualToolbarLogo -OldValue 'src="chrome://resources/images/chrome_logo_dark.svg"' -NewValue 'src="chrome://theme/current-channel-logo@2x"'
 
 # These two messages are legal attribution, not Ghosium product branding. Keep
 # Chromium named here as the upstream open-source project while making it clear
@@ -167,18 +172,20 @@ if ($LASTEXITCODE -ne 0) {
   throw 'Ghosium first-party product link routing failed.'
 }
 
-# Replace every product icon path used by current-channel-logo, Windows resources,
-# tiles, app shortcuts and product vector icons.
+# Replace product logos used by current-channel-logo, Windows resources, shared
+# dark-mode WebUI, tiles, app shortcuts and vector icon consumers.
 $brandSvg = Join-Path $repoRoot 'engine/branding/ghosium-mark.svg'
+$brandDarkSvg = Join-Path $repoRoot 'engine/branding/ghosium-mark-dark.svg'
 $vectorIcon = Join-Path $repoRoot 'engine/branding/vector/product.icon'
 $vectorRefreshIcon = Join-Path $repoRoot 'engine/branding/vector/product_refresh.icon'
-foreach ($asset in @($brandSvg, $vectorIcon, $vectorRefreshIcon)) {
+foreach ($asset in @($brandSvg, $brandDarkSvg, $vectorIcon, $vectorRefreshIcon)) {
   if (!(Test-Path $asset -PathType Leaf)) {
     throw "Required Ghosium brand asset is missing: $asset"
   }
 }
 
 Copy-Item $brandSvg (Join-Path $sourceRootResolved 'chrome/app/theme/chromium/product_logo.svg') -Force
+Copy-Item $brandDarkSvg $sharedDarkLogo -Force
 Copy-Item $vectorIcon (Join-Path $sourceRootResolved 'components/vector_icons/chromium/product.icon') -Force
 Copy-Item $vectorRefreshIcon (Join-Path $sourceRootResolved 'components/vector_icons/chromium/product_refresh.icon') -Force
 

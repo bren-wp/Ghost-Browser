@@ -12,6 +12,7 @@ $sourceRevisionPath = Join-Path $repoRoot 'ENGINE_SOURCE_REVISION'
 $snapshotRevisionPath = Join-Path $repoRoot 'ENGINE_REVISION'
 $thirdPartyNoticesPath = Join-Path $repoRoot 'THIRD_PARTY_NOTICES.md'
 $brandSvgPath = Join-Path $repoRoot 'engine/branding/ghosium-mark.svg'
+$brandDarkSvgPath = Join-Path $repoRoot 'engine/branding/ghosium-mark-dark.svg'
 $productVectorPath = Join-Path $repoRoot 'engine/branding/vector/product.icon'
 $productRefreshVectorPath = Join-Path $repoRoot 'engine/branding/vector/product_refresh.icon'
 $assetGeneratorPath = Join-Path $repoRoot 'scripts/generate-engine-brand-assets.py'
@@ -22,6 +23,7 @@ foreach ($required in @(
   $snapshotRevisionPath,
   $thirdPartyNoticesPath,
   $brandSvgPath,
+  $brandDarkSvgPath,
   $productVectorPath,
   $productRefreshVectorPath,
   $assetGeneratorPath
@@ -167,6 +169,9 @@ if ($SourceRoot) {
     'chrome/common/url_constants.h',
     'chrome/app/theme/chromium/BRANDING',
     'chrome/app/theme/chromium/product_logo.svg',
+    'chrome/browser/resources/contextual_tasks/top_toolbar_logo.html.ts',
+    'chrome/browser/resources/signin/managed_user_profile_notice/managed_user_profile_notice_value_prop.html.ts',
+    'ui/webui/resources/images/chrome_logo_dark.svg',
     'components/vector_icons/chromium/product.icon',
     'components/vector_icons/chromium/product_refresh.icon'
   )
@@ -183,6 +188,9 @@ if ($SourceRoot) {
     if (!$productStrings.Contains($needle)) {
       throw "Applied engine branding is missing expected product string: $needle"
     }
+  }
+  if (!$productStrings.Contains('Customize Ghosium')) {
+    throw 'Customize side-panel title is not Ghosium branded.'
   }
   Assert-NoLegacyVisibleBrand -Path $productStringsPath
   Assert-NoLegacyVisibleBrand -Path $settingsStringsPath
@@ -221,6 +229,24 @@ if ($SourceRoot) {
   $productSvg = Get-Content (Join-Path $resolvedSourceRoot 'chrome/app/theme/chromium/product_logo.svg') -Raw
   if (!$productSvg.Contains('aria-label="Ghosium"') -or !$productSvg.Contains('#62E7D5')) {
     throw 'Chromium product_logo.svg was not replaced with the Ghosium mark.'
+  }
+
+  $darkLogo = Get-Content (Join-Path $resolvedSourceRoot 'ui/webui/resources/images/chrome_logo_dark.svg') -Raw
+  if (!$darkLogo.Contains('aria-label="Ghosium"') -or !$darkLogo.Contains('#62E7D5')) {
+    throw 'Shared dark-mode WebUI product logo was not replaced with Ghosium.'
+  }
+
+  $contextualToolbar = Get-Content (Join-Path $resolvedSourceRoot 'chrome/browser/resources/contextual_tasks/top_toolbar_logo.html.ts') -Raw
+  if ($contextualToolbar.Contains('chrome_product.svg') -or $contextualToolbar.Contains('chrome_logo_dark.svg')) {
+    throw 'Contextual toolbar still references a legacy Chrome/Chromium product logo.'
+  }
+  if ([regex]::Matches($contextualToolbar, 'chrome://theme/current-channel-logo@2x').Count -lt 2) {
+    throw 'Contextual toolbar is not consistently routed to the Ghosium current-channel logo.'
+  }
+
+  $managedProfile = Get-Content (Join-Path $resolvedSourceRoot 'chrome/browser/resources/signin/managed_user_profile_notice/managed_user_profile_notice_value_prop.html.ts') -Raw
+  if (!$managedProfile.Contains('alt="Ghosium logo"') -or $managedProfile.Contains('alt="Chrome logo"')) {
+    throw 'Managed-profile product-logo accessibility text is not Ghosium branded.'
   }
 
   $productVector = Get-Content (Join-Path $resolvedSourceRoot 'components/vector_icons/chromium/product.icon') -Raw

@@ -43,8 +43,9 @@ function Replace-KnownRegex {
   )
 
   $text = [IO.File]::ReadAllText($Path)
-  if ([regex]::IsMatch($text, $Pattern)) {
-    $text = [regex]::Replace($text, $Pattern, $Replacement, 1)
+  $regex = [regex]::new($Pattern)
+  if ($regex.IsMatch($text)) {
+    $text = $regex.Replace($text, $Replacement, 1)
     [IO.File]::WriteAllText($Path, $text, [Text.UTF8Encoding]::new($false))
     return
   }
@@ -70,8 +71,8 @@ Replace-KnownLiteral -Path $urlConstants -OldValue '"https://support.google.com/
 Replace-KnownLiteral -Path $urlConstants -OldValue '"https://support.google.com/chrome?p=help&ctx=menu"' -NewValue '"https://ghosium.com/support"'
 Replace-KnownLiteral -Path $urlConstants -OldValue '"https://support.google.com/chrome?p=help&ctx=settings"' -NewValue '"https://ghosium.com/support"'
 
-# New-tab Customize > Change theme. Keep the Chromium Web Store security model
-# untouched; only the user-facing navigation target is changed here.
+# New-tab Customize > Change theme. Keep Chromium's existing Web Store security
+# model untouched; only the user-facing navigation target is changed here.
 Replace-KnownLiteral -Path $customizeHandler -OldValue 'GURL("https://chromewebstore.google.com/category/themes")' -NewValue 'GURL("https://store.ghosium.com/")'
 
 # App menu / extensions menu Store navigation. Do not repoint
@@ -82,11 +83,20 @@ Replace-KnownLiteral -Path $chromePages -OldValue 'browser, extension_urls::Appe
 
 # chrome://extensions user-facing links. These are navigation/help strings only;
 # they do not grant store privileges or change extension origin checks.
-Replace-KnownRegex -Path $extensionsUi -Pattern '(?s)source->AddString\(\s*"suspiciousInstallHelpUrl",\s*base::ASCIIToUTF16\(google_util::AppendGoogleLocaleParam\(\s*GURL\(chrome::kRemoveNonCWSExtensionURL\),\s*g_browser_process->GetApplicationLocale\(\)\)\s*\.spec\(\)\)\);' -Replacement 'source->AddString("suspiciousInstallHelpUrl",`n                    base::ASCIIToUTF16("https://ghosium.com/security"));' -AlreadyPresent 'https://ghosium.com/security'
-Replace-KnownLiteral -Path $extensionsUi -OldValue 'source->AddString("enhancedSafeBrowsingWarningHelpUrl",`n                    chrome::kCwsEnhancedSafeBrowsingLearnMoreURL);' -NewValue 'source->AddString("enhancedSafeBrowsingWarningHelpUrl",`n                    "https://ghosium.com/security");'
-Replace-KnownRegex -Path $extensionsUi -Pattern '(?s)source->AddString\(\s*"getMoreExtensionsUrl",\s*base::ASCIIToUTF16\(\s*google_util::AppendGoogleLocaleParam\(\s*extension_urls::AppendUtmSource\(\s*extension_urls::GetWebstoreExtensionsCategoryURL\(\),\s*extension_urls::kExtensionsSidebarUtmSource\),\s*g_browser_process->GetApplicationLocale\(\)\)\s*\.spec\(\)\)\);' -Replacement 'source->AddString("getMoreExtensionsUrl",`n                    base::ASCIIToUTF16("https://store.ghosium.com/"));' -AlreadyPresent 'https://store.ghosium.com/'
-Replace-KnownRegex -Path $extensionsUi -Pattern '(?s)source->AddString\(\s*"modernWebGuidanceURL",\s*base::ASCIIToUTF16\(google_util::AppendGoogleLocaleParam\(\s*extension_urls::AppendUtmSource\(\s*extension_urls::GetModernWebGuidanceURL\(\),\s*extension_urls::kExtensionsSidebarUtmSource\),\s*g_browser_process->GetApplicationLocale\(\)\)\s*\.spec\(\)\)\);' -Replacement 'source->AddString("modernWebGuidanceURL",`n                    base::ASCIIToUTF16("https://ghosium.com/support"));' -AlreadyPresent 'https://ghosium.com/support'
-Replace-KnownLiteral -Path $extensionsUi -OldValue 'source->AddString(`n      "hostPermissionsLearnMoreLink",`n      extension_permissions_constants::kRuntimeHostPermissionsHelpURL);' -NewValue 'source->AddString("hostPermissionsLearnMoreLink",`n                    "https://ghosium.com/support");'
+$suspiciousReplacement = "source->AddString(`"suspiciousInstallHelpUrl`",`n                    base::ASCIIToUTF16(`"https://ghosium.com/security`"));"
+Replace-KnownRegex -Path $extensionsUi -Pattern '(?s)source->AddString\(\s*"suspiciousInstallHelpUrl",\s*base::ASCIIToUTF16\(google_util::AppendGoogleLocaleParam\(\s*GURL\(chrome::kRemoveNonCWSExtensionURL\),\s*g_browser_process->GetApplicationLocale\(\)\)\s*\.spec\(\)\)\);' -Replacement $suspiciousReplacement -AlreadyPresent 'https://ghosium.com/security'
+
+$enhancedReplacement = "source->AddString(`"enhancedSafeBrowsingWarningHelpUrl`",`n                    `"https://ghosium.com/security`"));"
+Replace-KnownRegex -Path $extensionsUi -Pattern '(?s)source->AddString\(\s*"enhancedSafeBrowsingWarningHelpUrl",\s*chrome::kCwsEnhancedSafeBrowsingLearnMoreURL\s*\);' -Replacement $enhancedReplacement -AlreadyPresent 'https://ghosium.com/security'
+
+$getMoreReplacement = "source->AddString(`"getMoreExtensionsUrl`",`n                    base::ASCIIToUTF16(`"https://store.ghosium.com/`"));"
+Replace-KnownRegex -Path $extensionsUi -Pattern '(?s)source->AddString\(\s*"getMoreExtensionsUrl",\s*base::ASCIIToUTF16\(\s*google_util::AppendGoogleLocaleParam\(\s*extension_urls::AppendUtmSource\(\s*extension_urls::GetWebstoreExtensionsCategoryURL\(\),\s*extension_urls::kExtensionsSidebarUtmSource\),\s*g_browser_process->GetApplicationLocale\(\)\)\s*\.spec\(\)\)\);' -Replacement $getMoreReplacement -AlreadyPresent 'https://store.ghosium.com/'
+
+$guidanceReplacement = "source->AddString(`"modernWebGuidanceURL`",`n                    base::ASCIIToUTF16(`"https://ghosium.com/support`"));"
+Replace-KnownRegex -Path $extensionsUi -Pattern '(?s)source->AddString\(\s*"modernWebGuidanceURL",\s*base::ASCIIToUTF16\(google_util::AppendGoogleLocaleParam\(\s*extension_urls::AppendUtmSource\(\s*extension_urls::GetModernWebGuidanceURL\(\),\s*extension_urls::kExtensionsSidebarUtmSource\),\s*g_browser_process->GetApplicationLocale\(\)\)\s*\.spec\(\)\)\);' -Replacement $guidanceReplacement -AlreadyPresent 'https://ghosium.com/support'
+
+$hostPermissionsReplacement = "source->AddString(`"hostPermissionsLearnMoreLink`",`n                    `"https://ghosium.com/support`"));"
+Replace-KnownRegex -Path $extensionsUi -Pattern '(?s)source->AddString\(\s*"hostPermissionsLearnMoreLink",\s*extension_permissions_constants::kRuntimeHostPermissionsHelpURL\s*\);' -Replacement $hostPermissionsReplacement -AlreadyPresent 'https://ghosium.com/support'
 
 # About privacy URL for builds that expose the row.
 Replace-KnownLiteral -Path $aboutPageTs -OldValue "'https://policies.google.com/privacy'" -NewValue "'https://ghosium.com/legal/privacy-policy'"

@@ -299,6 +299,7 @@ async function closeTab(id: string): Promise<void> {
   const index = tabs.findIndex((tab) => tab.id === id);
   if (index < 0) return;
   const closing = tabs[index];
+  if (!closing) return;
   closedTabs.push({ title: closing.title, url: closing.url });
   if (closedTabs.length > MAX_CLOSED_TABS) closedTabs.shift();
 

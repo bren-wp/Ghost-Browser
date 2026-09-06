@@ -56,23 +56,6 @@ pub const DOCUMENT_START_SCRIPT: &str = r#"
   } catch (_) {}
 
   try {
-    const BlockedRTC = class {
-      constructor() {
-        throw new DOMException('WebRTC disabled by Ghost Browser', 'NotAllowedError');
-      }
-    };
-    Object.defineProperty(window, 'RTCPeerConnection', { value: BlockedRTC, configurable: false });
-    Object.defineProperty(window, 'webkitRTCPeerConnection', { value: BlockedRTC, configurable: false });
-  } catch (_) {}
-
-  try {
-    if (navigator.mediaDevices) {
-      Object.defineProperty(navigator.mediaDevices, 'getUserMedia', { value: deny, configurable: false });
-      Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', { value: deny, configurable: false });
-    }
-  } catch (_) {}
-
-  try {
     if ('bluetooth' in navigator && navigator.bluetooth) {
       Object.defineProperty(navigator.bluetooth, 'requestDevice', { value: deny, configurable: false });
     }

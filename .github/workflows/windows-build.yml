@@ -216,24 +216,34 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          & "staging/Ghosium-Browser.exe" --ghosium-self-test
-          if ($LASTEXITCODE -ne 0) {
-            throw "Ghosium launcher self-test failed"
+          $selfTest = Start-Process -FilePath (Resolve-Path "staging/Ghosium-Browser.exe") `
+            -ArgumentList "--ghosium-self-test" -Wait -PassThru
+          if ($selfTest.ExitCode -ne 0) {
+            throw "Ghosium launcher self-test failed with code $($selfTest.ExitCode)"
           }
 
           $profile = Join-Path $env:RUNNER_TEMP "ghosium-chromium-smoke"
-          $smokeOutput = & "staging/runtime/chrome.exe" `
-            "--headless=new" `
-            "--disable-gpu" `
-            "--disable-sync" `
-            "--no-pings" `
-            "--no-first-run" `
-            "--user-data-dir=$profile" `
-            "--dump-dom" `
-            "data:text/html,<html><body>ghosium-runtime-ok</body></html>" 2>&1 | Out-String
-          if ($LASTEXITCODE -ne 0 -or !$smokeOutput.Contains("ghosium-runtime-ok")) {
+          $stdout = Join-Path $env:RUNNER_TEMP "ghosium-chromium-smoke.stdout.txt"
+          $stderr = Join-Path $env:RUNNER_TEMP "ghosium-chromium-smoke.stderr.txt"
+          $chromiumArgs = @(
+            "--headless=new",
+            "--disable-gpu",
+            "--disable-sync",
+            "--no-pings",
+            "--no-first-run",
+            "--user-data-dir=$profile",
+            "--dump-dom",
+            "data:text/html,<html><body>ghosium-runtime-ok</body></html>"
+          )
+          $chromium = Start-Process -FilePath (Resolve-Path "staging/runtime/chrome.exe") `
+            -ArgumentList $chromiumArgs -Wait -PassThru `
+            -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          $smokeOutput = if (Test-Path $stdout) { Get-Content $stdout -Raw } else { "" }
+          $smokeError = if (Test-Path $stderr) { Get-Content $stderr -Raw } else { "" }
+          if ($chromium.ExitCode -ne 0 -or !$smokeOutput.Contains("ghosium-runtime-ok")) {
             Write-Host $smokeOutput
-            throw "Chromium headless smoke test failed"
+            Write-Host $smokeError
+            throw "Chromium headless smoke test failed with code $($chromium.ExitCode)"
           }
           Remove-Item $profile -Recurse -Force -ErrorAction SilentlyContinue
 

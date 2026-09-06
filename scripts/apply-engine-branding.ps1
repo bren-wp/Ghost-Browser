@@ -178,6 +178,11 @@ if ($LASTEXITCODE -ne 0) {
   throw "Ghosium engine asset generation failed with exit code $LASTEXITCODE"
 }
 
+& (Join-Path $PSScriptRoot 'rebrand-engine-locales.ps1') -SourceRoot $sourceRootResolved
+if ($LASTEXITCODE -ne 0) {
+  throw 'Ghosium supported locale branding failed.'
+}
+
 $thirdPartyChanges = & git -C $sourceRootResolved status --porcelain=v1 -- third_party
 if ($LASTEXITCODE -ne 0) {
   throw 'Unable to verify third_party source status after branding.'
@@ -191,4 +196,4 @@ if ($LASTEXITCODE -ne 0) {
   throw 'Ghosium full-source verification failed after branding.'
 }
 
-Write-Host 'Source-level Ghosium branding and product icon replacement applied successfully.'
+Write-Host 'Source-level Ghosium branding, locale strings and product icons applied successfully.'

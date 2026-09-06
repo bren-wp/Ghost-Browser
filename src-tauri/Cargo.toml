@@ -1,6 +1,6 @@
 [package]
 name = "ghost-browser"
-version = "0.3.0"
+version = "0.4.0"
 description = "Ghost Browser - privacy-first Windows browser"
 authors = ["Brendigo"]
 edition = "2024"

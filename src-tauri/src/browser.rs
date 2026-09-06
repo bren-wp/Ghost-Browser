@@ -6,7 +6,8 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 use tauri::{
-    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, WebviewBuilder, WebviewUrl,
+    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, Webview, WebviewBuilder,
+    WebviewUrl,
     webview::{DownloadEvent, NewWindowResponse, PageLoadEvent},
 };
 use url::Url;
@@ -14,8 +15,9 @@ use uuid::Uuid;
 
 const MAX_URL_LENGTH: usize = 8192;
 const MAX_TABS: usize = 512;
-const MAX_LIVE_WEBVIEWS: usize = 16;
-const PRIVACY_BROWSER_ARGS: &str = "--disable-sync --no-first-run --disable-default-apps --disable-domain-reliability --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
+const MAX_LIVE_WEBVIEWS: usize = 8;
+const PRIVACY_BROWSER_ARGS: &str =
+    "--disable-sync --no-first-run --disable-default-apps --disable-domain-reliability --disable-breakpad --disable-crash-reporter";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -144,7 +146,16 @@ fn is_allowed_navigation_url(url: &Url) -> bool {
         return false;
     }
 
-    matches!(url.scheme(), "about" | "blob")
+    match url.scheme() {
+        "about" => matches!(url.path(), "blank" | "srcdoc"),
+        "blob" => true,
+        _ => false,
+    }
+}
+
+fn persistable_page_url(input: &str) -> Option<String> {
+    let url = Url::parse(input).ok()?;
+    is_allowed_http_url(&url).then(|| url.to_string())
 }
 
 fn validate_url(input: &str) -> Result<Url, String> {
@@ -184,6 +195,9 @@ fn validate_url(input: &str) -> Result<Url, String> {
         "ttclid",
         "gbraid",
         "wbraid",
+        "srsltid",
+        "gad_source",
+        "gad_campaignid",
     ];
 
     let pairs: Vec<(String, String)> = url
@@ -350,14 +364,17 @@ fn create_webview(
         })
         .on_page_load(move |webview, payload| {
             let loading = matches!(payload.event(), PageLoadEvent::Started);
-            let url = payload.url().to_string();
+            let raw_url = payload.url().to_string();
+            let persisted_url = persistable_page_url(&raw_url);
             let mut should_emit = false;
 
             if let Some(state) = webview.try_state::<BrowserState>() {
                 if let Some(record) = state.tabs.lock().get_mut(&tab_for_load) {
                     if record.webview_label.as_deref() == Some(label_for_load.as_str()) {
                         record.snapshot.loading = loading;
-                        record.snapshot.url = Some(url.clone());
+                        if let Some(url) = persisted_url.as_ref() {
+                            record.snapshot.url = Some(url.clone());
+                        }
                         record.snapshot.has_webview = true;
                         record.snapshot.discarded = false;
                         should_emit = true;
@@ -372,7 +389,7 @@ fn create_webview(
                     TabEvent {
                         id: tab_for_load.clone(),
                         title: None,
-                        url: Some(url),
+                        url: persisted_url,
                         loading: Some(loading),
                         blocked: None,
                         discarded: Some(false),
@@ -437,7 +454,10 @@ fn create_webview(
         .map_err(|error| error.to_string())?;
 
     #[cfg(windows)]
-    crate::webview2_guard::install(&webview, tab_id.to_string(), app.clone())?;
+    if let Err(error) = crate::webview2_guard::install(&webview, tab_id.to_string(), app.clone()) {
+        let _ = webview.close();
+        return Err(error);
+    }
 
     {
         let mut tabs = state.tabs.lock();
@@ -462,6 +482,45 @@ fn create_webview(
     Ok(())
 }
 
+fn webview_or_restore(
+    app: &AppHandle,
+    state: &BrowserState,
+    tab_id: &str,
+) -> Result<(Option<Webview>, bool), String> {
+    validate_tab_id(tab_id)?;
+
+    let (label, stored_url) = {
+        let tabs = state.tabs.lock();
+        let record = tabs.get(tab_id).ok_or("Tab ne postoji")?;
+        (record.webview_label.clone(), record.snapshot.url.clone())
+    };
+
+    if let Some(label) = label {
+        if let Some(webview) = app.get_webview(&label) {
+            return Ok((Some(webview), false));
+        }
+
+        if let Some(record) = state.tabs.lock().get_mut(tab_id) {
+            record.webview_label = None;
+            record.snapshot.has_webview = false;
+            record.snapshot.discarded = true;
+        }
+    }
+
+    let Some(url) = stored_url else {
+        return Ok((None, false));
+    };
+    let target = validate_url(&url)?;
+    create_webview(app, state, tab_id, target)?;
+    let label = state
+        .tabs
+        .lock()
+        .get(tab_id)
+        .and_then(|record| record.webview_label.clone())
+        .ok_or("WebView taba nije obnovljen")?;
+    Ok((app.get_webview(&label), true))
+}
+
 #[tauri::command]
 pub async fn create_tab(state: State<'_, BrowserState>) -> Result<TabSnapshot, String> {
     if state.tabs.lock().len() >= MAX_TABS {
@@ -480,14 +539,13 @@ pub async fn create_tab(state: State<'_, BrowserState>) -> Result<TabSnapshot, S
     };
 
     state.tabs.lock().insert(
-        id.clone(),
+        id,
         TabRecord {
             snapshot: snapshot.clone(),
             webview_label: None,
             last_active: state.next_activity(),
         },
     );
-    *state.active.lock() = Some(id);
     Ok(snapshot)
 }
 
@@ -498,22 +556,14 @@ pub async fn set_active_tab(
     tab_id: String,
 ) -> Result<(), String> {
     validate_tab_id(&tab_id)?;
-    let (has_webview, stored_url) = {
-        let tabs = state.tabs.lock();
-        let record = tabs.get(&tab_id).ok_or("Tab ne postoji")?;
-        (record.webview_label.is_some(), record.snapshot.url.clone())
-    };
+    if !state.tabs.lock().contains_key(&tab_id) {
+        return Err("Tab ne postoji".into());
+    }
 
     *state.active.lock() = Some(tab_id.clone());
     state.touch_tab(&tab_id);
 
-    if !has_webview {
-        if let Some(url) = stored_url {
-            let target = validate_url(&url)?;
-            create_webview(&app, &state, &tab_id, target)?;
-        }
-    }
-
+    let _ = webview_or_restore(&app, &state, &tab_id)?;
     show_only_active(&app, &tab_id)
 }
 
@@ -579,7 +629,13 @@ pub async fn navigate_tab(
                 }
             }
             state.touch_tab(&tab_id);
-            return webview.navigate(target).map_err(|error| error.to_string());
+            if let Err(error) = webview.navigate(target) {
+                if let Some(record) = state.tabs.lock().get_mut(&tab_id) {
+                    record.snapshot.loading = false;
+                }
+                return Err(error.to_string());
+            }
+            return Ok(());
         }
 
         if let Some(record) = state.tabs.lock().get_mut(&tab_id) {
@@ -618,32 +674,20 @@ pub async fn close_tab(
     Ok(())
 }
 
-fn tab_webview(
-    app: &AppHandle,
-    state: &BrowserState,
-    tab_id: &str,
-) -> Result<tauri::Webview, String> {
-    validate_tab_id(tab_id)?;
-    let label = state
-        .tabs
-        .lock()
-        .get(tab_id)
-        .and_then(|record| record.webview_label.clone())
-        .ok_or("Tab nema aktivan prikaz")?;
-
-    app.get_webview(&label)
-        .ok_or_else(|| "WebView taba nije pronađen".into())
-}
-
 #[tauri::command]
 pub async fn reload_tab(
     app: AppHandle,
     state: State<'_, BrowserState>,
     tab_id: String,
 ) -> Result<(), String> {
-    tab_webview(&app, &state, &tab_id)?
-        .reload()
-        .map_err(|error| error.to_string())
+    let (webview, restored) = webview_or_restore(&app, &state, &tab_id)?;
+    let Some(webview) = webview else {
+        return Ok(());
+    };
+    if restored {
+        return Ok(());
+    }
+    webview.reload().map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -652,7 +696,14 @@ pub async fn go_back(
     state: State<'_, BrowserState>,
     tab_id: String,
 ) -> Result<(), String> {
-    let webview = tab_webview(&app, &state, &tab_id)?;
+    let (webview, restored) = webview_or_restore(&app, &state, &tab_id)?;
+    let Some(webview) = webview else {
+        return Ok(());
+    };
+    if restored {
+        return Ok(());
+    }
+
     #[cfg(windows)]
     return crate::webview2_guard::go_back(&webview);
 
@@ -666,7 +717,14 @@ pub async fn go_forward(
     state: State<'_, BrowserState>,
     tab_id: String,
 ) -> Result<(), String> {
-    let webview = tab_webview(&app, &state, &tab_id)?;
+    let (webview, restored) = webview_or_restore(&app, &state, &tab_id)?;
+    let Some(webview) = webview else {
+        return Ok(());
+    };
+    if restored {
+        return Ok(());
+    }
+
     #[cfg(windows)]
     return crate::webview2_guard::go_forward(&webview);
 
@@ -791,13 +849,13 @@ mod tests {
     }
 
     #[test]
-    fn scheduler_keeps_160_tabs_with_bounded_live_webviews() {
+    fn scheduler_keeps_320_tabs_with_bounded_live_webviews() {
         let mut tabs = HashMap::new();
-        for index in 0..160u64 {
+        for index in 0..320u64 {
             tabs.insert(index.to_string(), fake_record(index));
         }
 
-        let active = "159";
+        let active = "319";
         while live_webview_count(&tabs) > MAX_LIVE_WEBVIEWS {
             let candidate = select_discard_candidate(&tabs, Some(active), active)
                 .expect("candidate should exist while over budget");
@@ -807,19 +865,31 @@ mod tests {
             record.snapshot.discarded = true;
         }
 
-        assert_eq!(tabs.len(), 160);
+        assert_eq!(tabs.len(), 320);
         assert_eq!(live_webview_count(&tabs), MAX_LIVE_WEBVIEWS);
         assert!(tabs.get(active).unwrap().webview_label.is_some());
         assert_eq!(
             tabs.values().filter(|record| record.snapshot.discarded).count(),
-            160 - MAX_LIVE_WEBVIEWS
+            320 - MAX_LIVE_WEBVIEWS
         );
     }
 
     #[test]
     fn tracker_parameters_are_removed_without_damaging_regular_query_data() {
-        let url = validate_url("https://example.com/page?utm_source=test&id=42&fbclid=x")
-            .expect("valid URL");
+        let url = validate_url(
+            "https://example.com/page?utm_source=test&id=42&fbclid=x&srsltid=y",
+        )
+        .expect("valid URL");
         assert_eq!(url.as_str(), "https://example.com/page?id=42");
+    }
+
+    #[test]
+    fn transient_internal_urls_do_not_replace_restorable_page_url() {
+        assert!(persistable_page_url("about:blank").is_none());
+        assert!(persistable_page_url("blob:https://example.com/1234").is_none());
+        assert_eq!(
+            persistable_page_url("https://example.com/page").as_deref(),
+            Some("https://example.com/page")
+        );
     }
 }

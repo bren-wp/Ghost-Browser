@@ -2,21 +2,24 @@ use crate::browser::BrowserState;
 use tauri::{AppHandle, Emitter, Manager, Webview};
 use webview2_com::{
     Microsoft::Web::WebView2::Win32::{
-        COREWEBVIEW2_PERMISSION_STATE_DENY, COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_STRICT,
-        COREWEBVIEW2_WEB_RESOURCE_CONTEXT, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
-        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FETCH,
-        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FONT, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE,
-        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_MEDIA, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_OTHER,
-        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_PING, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SCRIPT,
-        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_STYLESHEET, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_WEBSOCKET,
+        COREWEBVIEW2_PERMISSION_KIND_CAMERA, COREWEBVIEW2_PERMISSION_KIND_GEOLOCATION,
+        COREWEBVIEW2_PERMISSION_KIND_MICROPHONE, COREWEBVIEW2_PERMISSION_KIND_UNKNOWN_PERMISSION,
+        COREWEBVIEW2_PERMISSION_STATE_DEFAULT, COREWEBVIEW2_PERMISSION_STATE_DENY,
+        COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_STRICT, COREWEBVIEW2_WEB_RESOURCE_CONTEXT,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FETCH, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FONT,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_MEDIA,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_OTHER, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_PING,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SCRIPT, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_STYLESHEET,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_WEBSOCKET,
         COREWEBVIEW2_WEB_RESOURCE_CONTEXT_XML_HTTP_REQUEST, ICoreWebView2_2, ICoreWebView2_13,
-        ICoreWebView2Profile3,
+        ICoreWebView2PermissionRequestedEventArgs3, ICoreWebView2Profile3, ICoreWebView2Settings4,
     },
     CoTaskMemPWSTR, PermissionRequestedEventHandler, WebResourceRequestedEventHandler, take_pwstr,
 };
 use windows::{
     Win32::System::Com::IStream,
-    core::{Interface, PWSTR},
+    core::{BOOL, Interface, PWSTR},
 };
 
 fn adblock_resource_type(context: COREWEBVIEW2_WEB_RESOURCE_CONTEXT) -> &'static str {
@@ -103,14 +106,15 @@ pub fn install(webview: &Webview, tab_id: String, app: AppHandle) -> Result<(), 
                 args.ResourceContext(&mut context)?;
                 let resource_type = adblock_resource_type(context);
 
-                let should_block = app_for_filter
-                    .try_state::<BrowserState>()
-                    .map(|state| {
-                        state
-                            .privacy
-                            .should_block(&request_url, &source_url, resource_type)
-                    })
-                    .unwrap_or(false);
+                let should_block = context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_PING
+                    || app_for_filter
+                        .try_state::<BrowserState>()
+                        .map(|state| {
+                            state
+                                .privacy
+                                .should_block(&request_url, &source_url, resource_type)
+                        })
+                        .unwrap_or(false);
 
                 if should_block {
                     let reason = CoTaskMemPWSTR::from("Blocked by Ghost Browser");
@@ -145,7 +149,25 @@ pub fn install(webview: &Webview, tab_id: String, app: AppHandle) -> Result<(), 
 
             let permission = PermissionRequestedEventHandler::create(Box::new(move |_sender, args| {
                 if let Some(args) = args {
-                    args.SetState(COREWEBVIEW2_PERMISSION_STATE_DENY)?;
+                    let mut kind = COREWEBVIEW2_PERMISSION_KIND_UNKNOWN_PERMISSION;
+                    let mut user_initiated = BOOL(0);
+                    args.PermissionKind(&mut kind)?;
+                    args.IsUserInitiated(&mut user_initiated)?;
+
+                    if let Ok(args3) = args.cast::<ICoreWebView2PermissionRequestedEventArgs3>() {
+                        let _ = args3.SetSavesInProfile(false);
+                    }
+
+                    let may_prompt = user_initiated.0 != 0
+                        && (kind == COREWEBVIEW2_PERMISSION_KIND_CAMERA
+                            || kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE
+                            || kind == COREWEBVIEW2_PERMISSION_KIND_GEOLOCATION);
+
+                    args.SetState(if may_prompt {
+                        COREWEBVIEW2_PERMISSION_STATE_DEFAULT
+                    } else {
+                        COREWEBVIEW2_PERMISSION_STATE_DENY
+                    })?;
                 }
                 Ok(())
             }));
@@ -155,8 +177,16 @@ pub fn install(webview: &Webview, tab_id: String, app: AppHandle) -> Result<(), 
             if let Ok(settings) = core.Settings() {
                 let _ = settings.SetAreDevToolsEnabled(false);
                 let _ = settings.SetAreDefaultContextMenusEnabled(true);
+                let _ = settings.SetAreHostObjectsAllowed(false);
+                let _ = settings.SetIsWebMessageEnabled(false);
                 let _ = settings.SetIsStatusBarEnabled(false);
                 let _ = settings.SetIsZoomControlEnabled(true);
+                let _ = settings.SetIsBuiltInErrorPageEnabled(true);
+
+                if let Ok(settings4) = settings.cast::<ICoreWebView2Settings4>() {
+                    let _ = settings4.SetIsGeneralAutofillEnabled(false);
+                    let _ = settings4.SetIsPasswordAutosaveEnabled(false);
+                }
             }
         })
         .map_err(|error| error.to_string())

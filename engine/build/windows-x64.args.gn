@@ -1,0 +1,21 @@
+# Ghosium Browser full-source Windows x64 release configuration.
+#
+# This intentionally remains an open-source Chromium-derived build. Do not set
+# is_chrome_branded=true or inject Google proprietary branding/API credentials.
+
+is_debug = false
+is_component_build = false
+is_official_build = false
+is_chrome_branded = false
+
+target_cpu = "x64"
+
+# Keep useful native crash symbols while avoiding the very large Blink/V8 debug
+# symbol payload in release builders.
+symbol_level = 1
+blink_symbol_level = 0
+v8_symbol_level = 0
+
+# External Windows builders do not have access to Google's trusted remote-exec
+# infrastructure. Build locally on the controlled Ghosium source builder.
+use_remoteexec = false

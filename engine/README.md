@@ -10,13 +10,14 @@ The source checkout must be detached at the exact commit in `ENGINE_SOURCE_REVIS
 
 ## Scope of Ghosium-owned engine changes
 
-Source-level Ghosium branding is applied only to product-controlled surfaces. The first implementation targets:
+Source-level Ghosium branding is applied only to product-controlled surfaces. The implementation covers:
 
 - product and short product names;
-- About and Settings product strings;
-- first-run and accessibility welcome strings;
-- application icons and Windows file/version resources;
-- Ghosium-owned Help, Update, Security, Search and Store routing;
+- About, Settings and Customize product strings;
+- first-run and accessibility product strings;
+- light and dark product logos, Windows icons and file/version resources;
+- the 30 supported Ghosium locales, including Croatian;
+- Ghosium-owned Help, Security, Search, Store, Terms and Privacy routing;
 - first-party extension-store integration;
 - default-search integration;
 - Ghosium-specific update metadata and provenance surfaces.
@@ -43,24 +44,81 @@ The source fork must not weaken:
 
 Privacy changes must be narrowly scoped to unnecessary telemetry/background product services and must not disable security-critical networking.
 
-## Build model
+## Windows source-builder requirements
 
-The full-source engine is intentionally separate from the normal hosted v0.7.x snapshot workflow because a Chromium source checkout and compile require substantially more disk, RAM and build time.
+The pinned Chromium source currently requires a real Windows source builder rather than a normal GitHub-hosted release runner. The builder must provide:
 
-The expected workstation/builder flow is:
+- Windows x64 on NTFS;
+- at least 100 GiB of free source/build capacity for a fresh checkout, with additional headroom recommended;
+- more than 16 GiB RAM recommended for practical compile times;
+- Visual Studio 2026 / 18.x or newer with Desktop development with C++ and the upstream-required Windows SDK components;
+- Git and Chromium `depot_tools` first on `PATH`;
+- `DEPOT_TOOLS_WIN_TOOLCHAIN=0` so the public build uses the locally installed Visual Studio toolchain;
+- a GitHub self-hosted runner label `ghosium-source-builder` when using the repository workflow.
 
-1. run `scripts/bootstrap-engine-source.ps1` to prepare a pinned checkout;
-2. run `scripts/apply-engine-branding.ps1` against the checkout;
-3. run `scripts/verify-engine-fork.ps1` to enforce Ghosium product and legal/security invariants;
-4. compile with the upstream GN/Ninja toolchain using the Ghosium build arguments documented here;
-5. run browser, sandbox, certificate, extension, startup, accessibility and low-memory test suites;
-6. package only after provenance and binary metadata checks pass.
+A persistent builder should set `GHOSIUM_SOURCE_WORK` to a dedicated Chromium checkout directory. `bootstrap-engine-source.ps1 -ReuseExisting` resets Ghosium-owned source edits back to the pinned upstream revision, keeps the expensive dependency/build cache, syncs the exact pinned revision and then allows the branding stage to run again deterministically.
 
-## Build arguments
+## Deterministic Windows build configuration
 
-The fork remains an open-source Chromium-derived build and must not impersonate Google Chrome branding. Use Chromium branding as the upstream base and apply Ghosium-owned resources on top. Do not set Google Chrome branding flags or introduce proprietary Google API keys as a branding mechanism.
+`engine/build/windows-x64.args.gn` is the reviewed release configuration. It intentionally keeps the build on open-source Chromium branding before the Ghosium-owned source resources are applied:
 
-A full-source Windows build should retain upstream security defaults and add Ghosium-specific release hardening through reviewed GN arguments rather than disabling components to make a build pass.
+- `is_debug = false`;
+- `is_component_build = false`;
+- `is_official_build = false`;
+- `is_chrome_branded = false`;
+- `target_cpu = "x64"`;
+- `use_remoteexec = false`.
+
+Do not switch `is_chrome_branded` or `is_official_build` to true and do not inject proprietary Google API credentials as a shortcut for product integration.
+
+## Manual workstation flow
+
+From a Ghosium repository checkout with `depot_tools` on `PATH`:
+
+```powershell
+./scripts/bootstrap-engine-source.ps1 -Destination C:\src\ghosium-chromium -ReuseExisting
+./scripts/apply-engine-branding.ps1 -SourceRoot C:\src\ghosium-chromium\src
+./scripts/verify-engine-fork.ps1 -SourceRoot C:\src\ghosium-chromium\src
+./scripts/configure-engine-build.ps1 -SourceRoot C:\src\ghosium-chromium\src -OutDir out/Ghosium
+```
+
+Then compile the browser and the upstream mini-installer packaging target from the Chromium `src` directory:
+
+```powershell
+autoninja -C out/Ghosium chrome mini_installer
+```
+
+Finally verify product metadata, required runtime outputs, GN invariants, third-party source integrity and SHA-256 provenance:
+
+```powershell
+./scripts/verify-engine-build-output.ps1 -SourceRoot C:\src\ghosium-chromium\src -OutDir out/Ghosium
+```
+
+The verifier requires the source-built `chrome.exe` to identify itself as `Ghosium Browser` with publisher/company metadata `Brendigo`. It also requires `mini_installer.exe`, `chrome.7z`, setup/runtime files and the pinned `args.gn` before producing `GHOSIUM-SOURCE-BUILD.json`.
+
+## GitHub source-build workflow
+
+`.github/workflows/full-source-windows-build.yml` is deliberately `workflow_dispatch` only. It runs on a controlled self-hosted Windows x64 machine carrying the `ghosium-source-builder` label, performs the complete pinned checkout → branding → verification → GN generation → `chrome` + `mini_installer` compile → binary verification chain, and uploads:
+
+- `Ghosium-Browser-Source-Setup.exe`;
+- `Ghosium-Browser-Source-Runtime.7z`;
+- `GHOSIUM-SOURCE-BUILD.json`;
+- `SHA256SUMS.txt`.
+
+The ordinary snapshot-based release workflow stays available during migration. It must not be removed until at least one source-built Windows artifact passes the binary verifier and the browser smoke/security checks. After that gate is met, the source-built installer becomes the candidate for the normal release path.
+
+## Promotion gate
+
+A full-source build is not release-ready merely because compilation succeeds. Promotion requires:
+
+1. exact `ENGINE_SOURCE_REVISION` provenance;
+2. successful `apply-engine-branding.ps1` and `verify-engine-fork.ps1`;
+3. clean `gn gen` using the reviewed Windows x64 args;
+4. successful `chrome` and `mini_installer` targets;
+5. `verify-engine-build-output.ps1` passing on the resulting binaries;
+6. sandbox, certificate/TLS, extension, startup, accessibility, update and low-memory smoke tests;
+7. preservation of upstream and third-party license/attribution material;
+8. signed release artifacts and verified update metadata before public distribution.
 
 ## Store architecture
 

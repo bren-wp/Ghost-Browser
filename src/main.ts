@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { reapplyRendererOverlay, setRendererOverlay } from "./overlay";
 
 interface TabSnapshot {
   id: string;
@@ -172,7 +173,6 @@ let closedTabs: ClosedTab[] = [];
 let toastTimer: number | undefined;
 let memoryRefreshTimer: number | undefined;
 let viewportFrame: number | null = null;
-let overlayOpen = false;
 
 const omniboxSuggestionState: SuggestionState = {
   input: omnibox,
@@ -225,6 +225,11 @@ async function safeAction(action: () => Promise<void>): Promise<void> {
   }
 }
 
+function syncSuggestionOverlay(): void {
+  const open = suggestionStates.some((state) => state.box.classList.contains("open"));
+  void safeAction(() => setRendererOverlay("suggestions", open));
+}
+
 function hideSuggestions(state?: SuggestionState): void {
   const states = state ? [state] : suggestionStates;
   for (const item of states) {
@@ -240,6 +245,7 @@ function hideSuggestions(state?: SuggestionState): void {
     item.input.setAttribute("aria-expanded", "false");
     item.input.removeAttribute("aria-activedescendant");
   }
+  syncSuggestionOverlay();
 }
 
 function suggestionLabel(kind: SuggestionChoice["kind"]): string {
@@ -254,6 +260,7 @@ function renderSuggestions(state: SuggestionState): void {
     state.box.classList.remove("open");
     state.input.setAttribute("aria-expanded", "false");
     state.input.removeAttribute("aria-activedescendant");
+    syncSuggestionOverlay();
     return;
   }
 
@@ -275,6 +282,7 @@ function renderSuggestions(state: SuggestionState): void {
   } else {
     state.input.removeAttribute("aria-activedescendant");
   }
+  syncSuggestionOverlay();
 }
 
 function buildSuggestionChoices(raw: string, local: OmniboxSuggestion[]): SuggestionChoice[] {
@@ -429,40 +437,38 @@ function refreshChrome(): void {
 }
 
 async function setOverlay(open: boolean): Promise<void> {
-  if (overlayOpen === open) return;
-  await invoke("set_overlay_open", { open });
-  overlayOpen = open;
+  await setRendererOverlay("chrome", open);
 }
 
 async function closeOverlays(): Promise<void> {
   hideSuggestions();
-  await setOverlay(false);
   privacyPanel.classList.remove("open");
   privacyPanel.setAttribute("aria-hidden", "true");
   appMenu.classList.remove("open");
   appMenu.setAttribute("aria-hidden", "true");
   menuButton.setAttribute("aria-expanded", "false");
+  await setOverlay(false);
 }
 
 async function openPrivacyPanel(): Promise<void> {
   hideSuggestions();
-  await setOverlay(true);
   appMenu.classList.remove("open");
   appMenu.setAttribute("aria-hidden", "true");
   menuButton.setAttribute("aria-expanded", "false");
   privacyPanel.classList.add("open");
   privacyPanel.setAttribute("aria-hidden", "false");
+  await setOverlay(true);
 }
 
 async function toggleMenu(): Promise<void> {
   hideSuggestions();
   const opening = !appMenu.classList.contains("open");
-  await setOverlay(opening);
   privacyPanel.classList.remove("open");
   privacyPanel.setAttribute("aria-hidden", "true");
   appMenu.classList.toggle("open", opening);
   appMenu.setAttribute("aria-hidden", String(!opening));
   menuButton.setAttribute("aria-expanded", String(opening));
+  await setOverlay(opening);
   if (opening) await refreshMemoryStatus();
 }
 
@@ -474,6 +480,7 @@ async function createTab(makeActive = true): Promise<TabSnapshot> {
     try {
       await invoke("set_active_tab", { tabId: tab.id });
       activeTabId = tab.id;
+      await reapplyRendererOverlay();
     } catch (error) {
       tabs = tabs.filter((item) => item.id !== tab.id);
       await invoke("close_tab", { tabId: tab.id }).catch(() => undefined);
@@ -492,6 +499,7 @@ async function activateTab(tabId: string): Promise<void> {
   await closeOverlays();
   await invoke("set_active_tab", { tabId });
   activeTabId = tabId;
+  await reapplyRendererOverlay();
 
   const tab = activeTab();
   if (tab?.url) {
@@ -575,6 +583,7 @@ async function closeTab(id: string): Promise<void> {
     if (next) {
       await invoke("set_active_tab", { tabId: next.id });
       activeTabId = next.id;
+      await reapplyRendererOverlay();
     } else {
       activeTabId = null;
     }

@@ -120,6 +120,20 @@ impl BrowserState {
         record.snapshot.blocked = record.snapshot.blocked.saturating_add(1);
         Some(record.snapshot.blocked)
     }
+
+    pub fn tab_url(&self, tab_id: &str) -> Option<String> {
+        self.tabs
+            .lock()
+            .get(tab_id)
+            .and_then(|record| record.snapshot.url.clone())
+    }
+
+    pub fn webview_label(&self, tab_id: &str) -> Option<String> {
+        self.tabs
+            .lock()
+            .get(tab_id)
+            .and_then(|record| record.webview_label.clone())
+    }
 }
 
 fn validate_tab_id(tab_id: &str) -> Result<(), String> {
@@ -560,11 +574,32 @@ pub async fn set_active_tab(
         return Err("Tab ne postoji".into());
     }
 
+    let previous = state.active.lock().clone();
     *state.active.lock() = Some(tab_id.clone());
     state.touch_tab(&tab_id);
 
-    let _ = webview_or_restore(&app, &state, &tab_id)?;
-    show_only_active(&app, &tab_id)
+    if let Err(error) = webview_or_restore(&app, &state, &tab_id) {
+        *state.active.lock() = previous.clone();
+        if let Some(previous_id) = previous.as_deref() {
+            let _ = show_only_active(&app, previous_id);
+        }
+        return Err(error);
+    }
+
+    if let Err(error) = show_only_active(&app, &tab_id) {
+        *state.active.lock() = previous.clone();
+        if let Some(previous_id) = previous.as_deref() {
+            let _ = show_only_active(&app, previous_id);
+        }
+        return Err(error);
+    }
+
+    let _ = app.emit_to(
+        "main",
+        "ghost://active-tab",
+        serde_json::json!({ "id": tab_id }),
+    );
+    Ok(())
 }
 
 #[tauri::command]

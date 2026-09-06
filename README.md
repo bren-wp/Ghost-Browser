@@ -1,38 +1,39 @@
 # Ghost Browser
 
-Ghost Browser is a privacy-first Windows browser built with **Rust**, **Tauri v2**, **WebView2** and **TypeScript**, with a custom Windows 11 / Fluent browser shell.
+Ghost Browser is a privacy-focused Windows browser with a Rust/Tauri browser core, a custom Windows 11 interface and the Windows Chromium/WebView2 rendering runtime.
 
-## Current engineering baseline
+## Current browser core
 
-- real multi-tab child WebView2 architecture
-- trusted local browser chrome separated from untrusted website WebViews
-- native WebView2 `WebResourceRequested` interception
-- `adblock-rust` filtering before matching requests reach tracker/ad servers
-- HTTP/HTTPS-only remote navigation
-- common tracking query-parameter stripping
-- WebRTC/media restrictions and native permission deny-by-default
-- DNT + Global Privacy Control exposure
-- strict Tauri capability isolation and CSP
-- no Ghost Browser analytics, telemetry SDK or crash uploader
-- Windows x64 portable executable + NSIS setup build workflow
+- multi-tab child WebView architecture with the trusted Ghost chrome isolated from remote website WebViews
+- Memory Saver with a bounded live-renderer budget and transparent tab restore
+- native request interception with bundled local ad/tracker filtering
+- WebView2 Strict tracking prevention
+- removal of common tracking parameters before navigation
+- HTTP/HTTPS navigation validation and restricted internal navigation
+- blocked hyperlink-auditing PING requests
+- DNT and Global Privacy Control signals
+- camera, microphone and geolocation use the normal browser permission flow only after a user action; permission decisions are not persisted by Ghost
+- high-risk device APIs remain restricted by default
+- remote pages cannot use Tauri IPC, WebView host objects or WebMessage
+- password autosave, general autofill and remote DevTools are disabled
+- no Ghost analytics SDK, advertising identifier, profiling system or Ghost crash uploader
+- optimized Windows x64 Portable.exe and NSIS Setup.exe builds with SHA256 checksums
 
-## Build on Windows
+## Windows build
 
 ```powershell
 npm install
 npm run tauri build -- --target x86_64-pc-windows-msvc --bundles nsis
 ```
 
-The GitHub Actions workflow produces:
+The Windows workflow audits frontend dependencies, compiles the frontend and Rust core, runs the high-tab-count scheduler tests, creates the optimized Windows executable and NSIS installer, calculates SHA256 checksums and publishes release assets from `main`.
 
-- `Ghost-Browser-Portable.exe`
-- `Ghost-Browser-Setup.exe`
-- `SHA256SUMS.txt`
+## Privacy boundary
 
-## Important privacy boundary
+Ghost Browser does not operate application telemetry, analytics, advertising or user-profiling infrastructure. Websites that you intentionally visit necessarily receive normal web requests, and text web searches require a search-index backend unless Ghost operates its own crawler and web index.
 
-Ghost Browser itself contains no application telemetry. The rendering engine in this edition is Microsoft WebView2. Microsoft documents that WebView2 can have required diagnostic data governed by the WebView2/Windows runtime. A literal guarantee of zero Microsoft runtime diagnostics would require replacing WebView2 with a separately maintained rendering-engine distribution.
+This compact Windows edition uses the system Microsoft WebView2 runtime rather than bundling an entire rendering engine. That keeps the Ghost download small and provides Chromium-class site compatibility, but Microsoft documents required WebView2 diagnostic data at the runtime level. A literal guarantee of zero Microsoft runtime diagnostics would require a separately maintained bundled rendering engine and a substantially larger distribution.
 
-## Production roadmap
+## Rendering-engine direction
 
-Before public production distribution, complete Authenticode signing, signed updates, full EasyList/EasyPrivacy governance, PSL-based third-party cookie partitioning, certificate-error UI, download isolation/reputation, per-site permissions, crash recovery and automated browser/privacy regression testing.
+Ghost keeps browser behavior, privacy policy, tab lifecycle and trusted UI separated from rendering-specific code. A future bundled Gecko/Firefox or Servo-derived edition can therefore be evaluated without coupling the browser UI to a search provider. Gecko is mature but significantly increases distribution size and maintenance requirements; Servo remains promising for a Rust-native engine but is not yet the compatibility baseline used for this production Windows edition.

@@ -18,8 +18,8 @@ use webview2_com::{
     CoTaskMemPWSTR, PermissionRequestedEventHandler, WebResourceRequestedEventHandler, take_pwstr,
 };
 use windows::{
-    Win32::{Foundation::BOOL, System::Com::IStream},
-    core::{Interface, PWSTR},
+    Win32::System::Com::IStream,
+    core::{BOOL, Interface, PWSTR},
 };
 
 fn adblock_resource_type(context: COREWEBVIEW2_WEB_RESOURCE_CONTEXT) -> &'static str {

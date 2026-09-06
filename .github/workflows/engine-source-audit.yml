@@ -75,8 +75,17 @@ jobs:
               throw "Windows source-build args are missing required invariant: $required"
             }
           }
-          if ($args -match '(?i)is_chrome_branded\s*=\s*true|is_official_build\s*=\s*true|google_api_key\s*=|google_default_client_(?:id|secret)\s*=') {
-            throw 'Windows source-build args contain forbidden Google/proprietary configuration.'
+          foreach ($forbidden in @(
+            '(?im)^\s*is_chrome_branded\s*=\s*true\s*$',
+            '(?im)^\s*is_official_build\s*=\s*true\s*$',
+            '(?im)^\s*use_remoteexec\s*=\s*true\s*$',
+            '(?im)^\s*google_api_key\s*=',
+            '(?im)^\s*google_default_client_id\s*=',
+            '(?im)^\s*google_default_client_secret\s*='
+          )) {
+            if ($args -match $forbidden) {
+              throw "Windows source-build args contain forbidden active configuration: $forbidden"
+            }
           }
 
           $workflow = Get-Content '.github/workflows/full-source-windows-build.yml' -Raw

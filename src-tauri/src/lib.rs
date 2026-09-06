@@ -23,6 +23,7 @@ pub fn run() {
             browser::clear_browsing_data,
             browser::discard_inactive_tabs,
             browser::browser_stats,
+            search::resolve_omnibox_input,
             search::resolve_search_query
         ])
         .run(tauri::generate_context!())

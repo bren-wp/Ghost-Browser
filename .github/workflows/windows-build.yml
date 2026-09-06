@@ -73,14 +73,6 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Upload generated npm lockfile
-        uses: actions/upload-artifact@v4
-        with:
-          name: Ghost-Browser-NPM-Lockfile
-          path: package-lock.json
-          if-no-files-found: error
-          retention-days: 7
-
       - name: Audit frontend dependencies
         run: npm run audit
 
@@ -143,11 +135,16 @@ jobs:
       - name: Check frontend
         run: npm run build
 
+      - name: Normalize Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
       - name: Check Rust
         run: cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc --locked
 
+      - name: Run Rust functional tests and 320-tab scheduler
+        run: cargo test --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc --lib --locked
+
+      - name: Build Ghosium Browser and NSIS installer
         run: npm run tauri build -- --target x86_64-pc-windows-msvc --bundles nsis
 
       - name: Collect portable and setup executables

@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-windows:
@@ -90,3 +90,22 @@ jobs:
           path: artifacts/*
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = "v0.2.0"
+          $title = "Ghost Browser v0.2.0"
+          $notes = "Production Windows build of Ghost Browser v0.2.0. Includes the portable executable, NSIS installer and SHA256 checksums."
+
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag artifacts/Ghost-Browser-Portable.exe artifacts/Ghost-Browser-Setup.exe artifacts/SHA256SUMS.txt --clobber --repo $env:GITHUB_REPOSITORY
+            gh release edit $tag --title $title --notes $notes --repo $env:GITHUB_REPOSITORY
+          } else {
+            gh release create $tag artifacts/Ghost-Browser-Portable.exe artifacts/Ghost-Browser-Setup.exe artifacts/SHA256SUMS.txt --target $env:GITHUB_SHA --title $title --notes $notes --repo $env:GITHUB_REPOSITORY
+          }

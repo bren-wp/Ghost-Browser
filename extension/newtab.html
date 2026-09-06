@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="hr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="referrer" content="no-referrer">
+  <title>Ghosium Browser</title>
+  <link rel="stylesheet" href="newtab.css">
+</head>
+<body>
+  <main class="shell">
+    <div class="aurora aurora-a" aria-hidden="true"></div>
+    <div class="aurora aurora-b" aria-hidden="true"></div>
+
+    <section class="hero" aria-labelledby="title">
+      <img class="mark" src="ghosium-mark.svg" alt="" width="82" height="82">
+      <p class="eyebrow">GHOSIUM SEARCH</p>
+      <h1 id="title">Browse the web,<br>stay <span>unseen.</span></h1>
+      <p class="lead">Chromium kompatibilnost, Ghosium Search i privatnosne postavke bez nepotrebnog aplikacijskog praćenja.</p>
+
+      <form class="search" action="https://search.ghosium.com/" method="get" role="search">
+        <label class="sr-only" for="q">Ghosium Search</label>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg>
+        <input id="q" name="q" type="search" autocomplete="off" spellcheck="false" placeholder="Pretraži web s Ghosium Search">
+      </form>
+
+      <div class="status" aria-label="Ghosium značajke">
+        <span><strong>Ghosium Search</strong> zadana pretraga</span>
+        <span><strong>Ghosium Shield</strong> zaštita od trackera</span>
+        <span><strong>Low Memory</strong> automatski na slabijim računalima</span>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

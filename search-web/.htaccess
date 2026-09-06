@@ -1,0 +1,15 @@
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "no-referrer"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), browsing-topics=()"
+</IfModule>
+
+<IfModule mod_authz_core.c>
+  <FilesMatch "\.(json|log|bak|ini)$">
+    Require all denied
+  </FilesMatch>
+</IfModule>

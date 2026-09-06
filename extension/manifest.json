@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Ghosium Privacy",
+  "version": "0.6.0",
+  "description": "Lokalni Ghosium novi tab i statična zaštita od poznatih third-party trackera.",
+  "permissions": [
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "ghosium_privacy",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  }
+}

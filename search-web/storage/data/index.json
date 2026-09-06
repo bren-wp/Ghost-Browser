@@ -1,0 +1,14 @@
+[
+  {
+    "url": "https://ghosium.com/",
+    "title": "Ghosium Browser",
+    "description": "Ghosium Browser — Chromium kompatibilnost, privatnost i Ghosium Search.",
+    "tags": ["ghosium", "browser", "privacy", "chromium"]
+  },
+  {
+    "url": "https://search.ghosium.com/",
+    "title": "Ghosium Search",
+    "description": "Privatno Ghosium pretraživanje i lokalni JSON indeks.",
+    "tags": ["ghosium", "search", "privacy"]
+  }
+]

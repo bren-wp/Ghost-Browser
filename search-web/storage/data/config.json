@@ -1,0 +1,25 @@
+{
+  "site_name": "Ghosium Search",
+  "base_url": "https://search.ghosium.com",
+  "max_results": 20,
+  "cache_ttl_seconds": 600,
+  "rate_limit": {
+    "enabled": true,
+    "requests": 120,
+    "window_seconds": 600
+  },
+  "provider": {
+    "enabled": false,
+    "endpoint": "",
+    "api_key": "",
+    "auth_header": "Authorization",
+    "auth_prefix": "Bearer ",
+    "query_param": "q",
+    "timeout_seconds": 6
+  },
+  "crawler": {
+    "max_pages": 40,
+    "max_depth": 2,
+    "user_agent": "GhosiumSearchBot/0.6"
+  }
+}

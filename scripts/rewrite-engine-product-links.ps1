@@ -54,6 +54,17 @@ function Replace-KnownRegex {
   }
 }
 
+function Assert-LiteralAbsent {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$Literal
+  )
+
+  if ([IO.File]::ReadAllText($Path).Contains($Literal)) {
+    throw "Legacy product-generated URL remains in ${Path}: $Literal"
+  }
+}
+
 $urlConstants = Join-Path $sourceRootResolved 'chrome/common/url_constants.h'
 $customizeHandler = Join-Path $sourceRootResolved 'chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome_page_handler.cc'
 $chromePages = Join-Path $sourceRootResolved 'chrome/browser/ui/chrome_pages.cc'
@@ -101,6 +112,9 @@ Replace-KnownRegex -Path $extensionsUi -Pattern '(?s)source->AddString\(\s*"host
 # About privacy URL for builds that expose the row.
 Replace-KnownLiteral -Path $aboutPageTs -OldValue "'https://policies.google.com/privacy'" -NewValue "'https://ghosium.com/legal/privacy-policy'"
 
+# Every Ghosium URL introduced into these product-owned surfaces must be one of
+# the exact allowlisted destinations. Do not infer that unrelated upstream URLs
+# elsewhere in the same source files are Ghosium-owned links.
 $modifiedProductLinkFiles = @($urlConstants, $customizeHandler, $chromePages, $extensionsUi, $aboutPageTs)
 $approved = @($config.allowedProductUrls)
 foreach ($path in $modifiedProductLinkFiles) {
@@ -114,16 +128,15 @@ foreach ($path in $modifiedProductLinkFiles) {
   }
 }
 
-foreach ($legacy in @(
-  'https://chromewebstore.google.com/category/themes',
-  'https://policies.google.com/privacy'
-)) {
-  foreach ($path in $modifiedProductLinkFiles) {
-    if ([IO.File]::ReadAllText($path).Contains($legacy)) {
-      throw "Legacy product-generated URL remains in ${Path}: $legacy"
-    }
-  }
-}
+# Scope legacy assertions to the exact product-owned entry point being replaced.
+# For example, url_constants.h can legitimately contain Google privacy/support
+# URLs for independent upstream services; those are not automatically Ghosium
+# product links and must not be globally rewritten.
+Assert-LiteralAbsent -Path $customizeHandler -Literal 'https://chromewebstore.google.com/category/themes'
+Assert-LiteralAbsent -Path $aboutPageTs -Literal 'https://policies.google.com/privacy'
+Assert-LiteralAbsent -Path $urlConstants -Literal 'https://support.google.com/chrome?p=help&ctx=keyboard'
+Assert-LiteralAbsent -Path $urlConstants -Literal 'https://support.google.com/chrome?p=help&ctx=menu'
+Assert-LiteralAbsent -Path $urlConstants -Literal 'https://support.google.com/chrome?p=help&ctx=settings'
 
 $thirdPartyChanges = & git -C $sourceRootResolved status --porcelain=v1 -- third_party
 if ($LASTEXITCODE -ne 0) {

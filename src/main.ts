@@ -39,7 +39,6 @@ interface ClosedTab {
   url: string | null;
 }
 
-const MAX_INPUT_LENGTH = 8192;
 const MAX_CLOSED_TABS = 25;
 const appWindow = getCurrentWindow();
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -315,25 +314,8 @@ async function activateNumberedTab(number: number): Promise<void> {
   if (target) await activateTab(target.id);
 }
 
-function normalizeInput(raw: string): { type: "url" | "search"; value: string } {
-  const value = raw.trim();
-  if (!value) throw new Error("Upišite pojam za pretraživanje ili web-adresu.");
-  if (value.length > MAX_INPUT_LENGTH) throw new Error("Unos je predugačak.");
-  if (/[\u0000-\u001F\u007F]/.test(value)) throw new Error("Unos sadrži nedopuštene znakove.");
-  if (/^https?:\/\//i.test(value)) return { type: "url", value };
-  if (/^(localhost|\d{1,3}(?:\.\d{1,3}){3})(:\d+)?(\/.*)?$/i.test(value)) {
-    return { type: "url", value: `http://${value}` };
-  }
-  if (/^[\w.-]+\.[a-z]{2,}(?::\d+)?(?:\/.*)?$/i.test(value)) {
-    return { type: "url", value: `https://${value}` };
-  }
-  return { type: "search", value };
-}
-
 async function resolveTarget(raw: string): Promise<string> {
-  const parsed = normalizeInput(raw);
-  if (parsed.type === "url") return parsed.value;
-  return invoke<string>("resolve_search_query", { query: parsed.value });
+  return invoke<string>("resolve_omnibox_input", { input: raw });
 }
 
 async function navigateTab(tabId: string, raw: string): Promise<void> {

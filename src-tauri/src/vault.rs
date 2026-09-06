@@ -1,5 +1,6 @@
-use crate::{browser::BrowserState, profile::{normalize_origin, ProfileStore, VaultEntry}};
+use crate::profile::{normalize_origin, ProfileStore, VaultEntry};
 use tauri::{AppHandle, Manager, State};
+use uuid::Uuid;
 
 const MAX_SECRET_BYTES: usize = 2_048;
 const VAULT_PREFIX: &str = "GhostBrowser/Vault/";
@@ -23,13 +24,16 @@ pub fn store_secret(target: &str, username: &str, secret: &str) -> Result<(), St
     use windows_sys::Win32::{
         Foundation::FILETIME,
         Security::Credentials::{
-            CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC, CredWriteW,
-            CRED_MAX_CREDENTIAL_BLOB_SIZE,
+            CREDENTIALW, CRED_MAX_CREDENTIAL_BLOB_SIZE, CRED_PERSIST_LOCAL_MACHINE,
+            CRED_TYPE_GENERIC, CredWriteW,
         },
     };
 
     let bytes = secret.as_bytes();
-    if bytes.is_empty() || bytes.len() > MAX_SECRET_BYTES || bytes.len() > CRED_MAX_CREDENTIAL_BLOB_SIZE as usize {
+    if bytes.is_empty()
+        || bytes.len() > MAX_SECRET_BYTES
+        || bytes.len() > CRED_MAX_CREDENTIAL_BLOB_SIZE as usize
+    {
         return Err("Lozinka nije valjane duljine".into());
     }
     if target.len() > 512 || username.len() > 2_048 {
@@ -45,7 +49,10 @@ pub fn store_secret(target: &str, username: &str, secret: &str) -> Result<(), St
         Type: CRED_TYPE_GENERIC,
         TargetName: target_w.as_mut_ptr(),
         Comment: null_mut(),
-        LastWritten: FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 },
+        LastWritten: FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        },
         CredentialBlobSize: blob.len() as u32,
         CredentialBlob: blob.as_mut_ptr(),
         Persist: CRED_PERSIST_LOCAL_MACHINE,
@@ -116,7 +123,9 @@ pub fn delete_secret(target: &str) -> Result<(), String> {
     if ok == 0 {
         let code = unsafe { GetLastError() };
         if code != ERROR_NOT_FOUND {
-            return Err(format!("Windows nije mogao obrisati vjerodajnicu (greška {code})"));
+            return Err(format!(
+                "Windows nije mogao obrisati vjerodajnicu (greška {code})"
+            ));
         }
     }
     Ok(())
@@ -152,16 +161,16 @@ pub async fn vault_save(
     let origin = normalize_origin(&origin)?;
 
     if let Some(id) = id {
+        Uuid::parse_str(&id).map_err(|_| "ID spremljene prijave nije valjan".to_string())?;
         let existing = store.get_vault(&id).ok_or("Lozinka nije pronađena")?;
-        store_secret(&vault_secret_target(&id), &username, &password)?;
+        let target = vault_secret_target(&id);
+        let old_secret = read_secret(&target)?;
+        store_secret(&target, &username, &password)?;
+
         match store.upsert_vault_metadata(Some(id.clone()), &origin, &username, &label) {
             Ok(entry) => Ok(entry),
             Err(error) => {
-                let _ = store_secret(
-                    &vault_secret_target(&id),
-                    &existing.username,
-                    &read_secret(&vault_secret_target(&id)).unwrap_or_default(),
-                );
+                let _ = store_secret(&target, &existing.username, &old_secret);
                 Err(error)
             }
         }
@@ -180,6 +189,7 @@ pub async fn vault_delete(
     store: State<'_, ProfileStore>,
     id: String,
 ) -> Result<bool, String> {
+    Uuid::parse_str(&id).map_err(|_| "ID spremljene prijave nije valjan".to_string())?;
     if store.get_vault(&id).is_none() {
         return Ok(false);
     }
@@ -190,24 +200,26 @@ pub async fn vault_delete(
 #[tauri::command]
 pub async fn vault_fill(
     app: AppHandle,
-    browser: State<'_, BrowserState>,
     store: State<'_, ProfileStore>,
     id: String,
     tab_id: String,
 ) -> Result<(), String> {
+    Uuid::parse_str(&id).map_err(|_| "ID spremljene prijave nije valjan".to_string())?;
+    Uuid::parse_str(&tab_id).map_err(|_| "ID taba nije valjan".to_string())?;
+
     let entry = store.get_vault(&id).ok_or("Lozinka nije pronađena")?;
-    let current_url = browser.tab_url(&tab_id).ok_or("Aktivni tab nema web-adresu")?;
+    let webview = app
+        .get_webview(&format!("tab-{tab_id}"))
+        .ok_or("Web-stranica nije aktivna")?;
+    let current_url = webview.url().map_err(|error| error.to_string())?.to_string();
     let current_origin = normalize_origin(&current_url)?;
     if current_origin != entry.origin {
         return Err("Spremljena prijava pripada drugoj domeni".into());
     }
 
-    let label = browser
-        .webview_label(&tab_id)
-        .ok_or("Web-stranica nije aktivna")?;
-    let webview = app.get_webview(&label).ok_or("Web-stranica nije aktivna")?;
     let password = read_secret(&vault_secret_target(&id))?;
-    let username_json = serde_json::to_string(&entry.username).map_err(|error| error.to_string())?;
+    let username_json =
+        serde_json::to_string(&entry.username).map_err(|error| error.to_string())?;
     let password_json = serde_json::to_string(&password).map_err(|error| error.to_string())?;
 
     let script = format!(
@@ -217,7 +229,9 @@ pub async fn vault_fill(
           const password = {password_json};
           const setValue = (el, value) => {{
             if (!el) return;
-            const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+            const proto = el instanceof HTMLTextAreaElement
+              ? HTMLTextAreaElement.prototype
+              : HTMLInputElement.prototype;
             const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
             if (setter) setter.call(el, value); else el.value = value;
             el.dispatchEvent(new Event('input', {{ bubbles: true }}));

@@ -10,32 +10,21 @@
 }
 
 .tab {
-  flex: 0 1 180px;
+  flex: 0 1 190px;
   min-width: 92px;
 }
 
 .tab.discarded:not(.active) {
-  opacity: 0.72;
+  opacity: 0.62;
 }
 
 .tab.discarded .tab-favicon {
-  color: #7f8898;
+  color: oklch(0.55 0.018 255);
 }
 
 .menu-item:disabled {
-  opacity: 0.42;
+  opacity: 0.38;
   pointer-events: none;
-}
-
-.menu-status {
-  margin: 2px 8px 7px;
-  padding: 8px 9px;
-  border-radius: 9px;
-  border: 1px solid rgba(142, 167, 255, 0.11);
-  background: rgba(142, 167, 255, 0.055);
-  color: #8f99aa;
-  font-size: 10px;
-  line-height: 1.35;
 }
 
 .omnibox,
@@ -45,48 +34,98 @@
 
 .omnibox-suggestions {
   position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(100% + 8px);
   z-index: 1300;
+  top: calc(100% + 9px);
+  left: -1px;
+  right: -1px;
   display: none;
   overflow: hidden;
-  padding: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 14px;
-  background: rgba(20, 22, 29, 0.98);
-  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.42);
-  backdrop-filter: blur(22px);
+  padding: 7px;
+  border: 1px solid oklch(1 0 0 / 0.105);
+  border-radius: var(--radius-2xl);
+  background:
+    linear-gradient(180deg, oklch(0.2 0.044 265 / 0.985), oklch(0.155 0.037 265 / 0.992));
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(28px) saturate(120%);
+  transform-origin: top center;
+}
+
+.omnibox-suggestions::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    oklch(0.858 0.132 164.6 / 0.28),
+    oklch(0.789 0.135 212.1 / 0.34),
+    oklch(0.75 0.14 295.2 / 0.25),
+    transparent
+  );
 }
 
 .omnibox-suggestions.open {
   display: block;
+  animation: suggestion-in 130ms var(--ease-premium) both;
+}
+
+@keyframes suggestion-in {
+  from {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .omnibox-suggestion {
+  position: relative;
   width: 100%;
-  min-height: 50px;
+  min-height: 51px;
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 7px 10px;
-  border: 0;
-  border-radius: 9px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
   background: transparent;
-  color: inherit;
+  color: var(--foreground);
   text-align: left;
-  cursor: default;
+  transition: background 100ms ease, border-color 100ms ease;
 }
 
 .omnibox-suggestion:hover,
 .omnibox-suggestion.selected {
-  background: rgba(124, 151, 255, 0.13);
+  border-color: oklch(1 0 0 / 0.045);
+  background: linear-gradient(90deg, oklch(0.789 0.135 212.1 / 0.075), oklch(0.75 0.14 295.2 / 0.045));
+}
+
+.omnibox-suggestion.selected::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  border-radius: 999px;
+  background: linear-gradient(var(--aurora), var(--neon));
+  box-shadow: 0 0 10px oklch(0.789 0.135 212.1 / 0.35);
 }
 
 .suggestion-glyph {
-  color: #aebcf7;
-  font-size: 15px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid oklch(1 0 0 / 0.055);
+  border-radius: var(--radius-md);
+  background: oklch(1 0 0 / 0.025);
+  color: var(--neon);
+  font-size: 13px;
   text-align: center;
 }
 
@@ -94,7 +133,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .suggestion-copy strong,
@@ -105,24 +144,33 @@
 }
 
 .suggestion-copy strong {
-  color: #f5f7fb;
-  font-size: 13px;
-  font-weight: 580;
+  color: oklch(0.94 0.008 255);
+  font-size: 12.5px;
+  font-weight: 590;
+  letter-spacing: -0.008em;
 }
 
 .suggestion-copy small {
-  color: #8e97a8;
-  font-size: 11px;
+  color: oklch(0.6 0.018 255);
+  font-size: 10.5px;
 }
 
 .suggestion-kind {
-  color: #778195;
-  font-size: 10px;
+  padding: 4px 7px;
+  border: 1px solid oklch(1 0 0 / 0.055);
+  border-radius: 999px;
+  color: oklch(0.58 0.018 255);
+  background: oklch(1 0 0 / 0.022);
+  font-size: 8.5px;
+  font-weight: 600;
   white-space: nowrap;
 }
 
 .newtab-suggestions {
   top: calc(100% + 10px);
+  left: 0;
+  right: 0;
+  text-align: left;
 }
 
 @media (max-width: 900px) {

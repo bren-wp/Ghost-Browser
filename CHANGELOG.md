@@ -1,22 +1,22 @@
 # Changelog
 
-All notable Ghosium Browser distribution changes are documented here.
+## 0.6.0
 
-## 0.6.0 — Chromium-native migration
-
-- replaced the custom browser application runtime with the upstream open-source Chromium Windows browser distribution
-- reduced Ghosium-authored executable code to a native C++ launcher
-- retained the established dark aurora/neon/violet Ghosium visual identity in a local new-tab page
-- added a Manifest V3 declarative privacy component with no custom JavaScript runtime
-- added conservative third-party tracker blocking and common tracking-parameter removal
-- disabled browser sync, crash reporting, background mode and hyperlink auditing pings through supported Chromium switches
-- moved profile data to a dedicated `%LOCALAPPDATA%\Ghosium Browser\User Data` root
-- inherited Chromium-native tabs, settings, bookmarks, history, downloads, password manager, site permissions, extensions and DevTools instead of maintaining parallel implementations
-- added pinned Chromium revision metadata and upstream archive hashing
-- replaced the old release pipeline with Chromium distribution validation, C++ hardening, headless smoke tests, stable GitHub Releases and GitHub Container Registry package publication
-- added complete architecture, build, privacy, security, contribution, release and Chromium-update documentation
-- added BSD 3-Clause licensing for Ghosium-authored source and third-party attribution documentation
-
-## 0.5.1
-
-Historical release from the previous architecture. Users should upgrade to the current stable Chromium-native release once available.
+- replaced the former embedded-browser application architecture with direct upstream Chromium distribution
+- removed WebView2/Tauri/Rust/TypeScript browser runtime layers
+- standardized Ghosium-owned desktop executable code on C++20
+- added hardened command-line filtering and Windows image-load mitigations
+- added automatic Low Memory mode for systems with 8 GiB RAM or less
+- retained normal Balanced mode and Chromium security isolation
+- added script-free Ghosium new-tab design with no vertical scrolling
+- changed all bundled search entry points to Ghosium Search
+- added single-purpose Manifest V3 Ghosium Search provider override
+- retained declarative Ghosium Privacy filtering and tracking-parameter cleanup
+- added complete `search.ghosium.com` PHP shared-hosting implementation with JSON storage and no database
+- added local JSON crawler/index, local ranker, suggestion endpoint, optional generic server-side provider and privacy-aware cache/rate limiting
+- added PHP/JSON search-service CI smoke tests
+- fixed deterministic Chromium/C++ smoke testing
+- fixed NSIS staging-path handling with absolute build definitions
+- added shared-hosting Search ZIP to stable release assets and checksums
+- updated stable Release and GitHub Packages publication workflow
+- expanded architecture, privacy, performance, search, deployment and release documentation

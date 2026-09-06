@@ -32,8 +32,7 @@ function fetch_html(string $url, string $userAgent): array
     $handle = curl_init($url);
     curl_setopt_array($handle, [
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_MAXREDIRS => 3,
+        CURLOPT_FOLLOWLOCATION => false,
         CURLOPT_CONNECTTIMEOUT => 4,
         CURLOPT_TIMEOUT => 10,
         CURLOPT_USERAGENT => $userAgent,

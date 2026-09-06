@@ -2,41 +2,28 @@
 
 ## Supported releases
 
-Only the newest stable Ghosium Browser release is supported with security fixes. Older releases should be upgraded rather than kept as long-lived security branches.
+Only the newest stable Ghosium Browser release is supported with Ghosium security fixes. Older releases should be upgraded rather than maintained indefinitely.
 
 ## Chromium security baseline
 
-Ghosium's security boundary depends heavily on the Chromium revision shipped in each release. Every release records that exact revision in `BUILD-INFO.json` and `CHROMIUM-REVISION.txt`.
+The desktop security boundary depends heavily on the exact Chromium revision shipped in the release. `BUILD-INFO.json` and `CHROMIUM-REVISION.txt` record that revision, product version, upstream source SHA and archive hash.
 
-When upstream Chromium publishes a relevant security update, the Ghosium Chromium revision should be refreshed, the complete release workflow rerun and a new stable Ghosium version published.
+When an upstream Chromium security update is relevant, Ghosium should pin a newer revision, run the complete release pipeline and publish a new stable version.
+
+## Ghosium-owned security boundaries
+
+CI verifies that the desktop executable layer remains C++ only, legacy wrapper runtimes are absent, bundled browser resources contain no custom JavaScript, the search endpoint is Ghosium Search, declarative rule IDs are unique, the launcher compiles with Windows mitigations and both launcher/Chromium smoke tests pass.
+
+The launcher blocks command-line attempts to replace the dedicated profile/extensions or disable sandbox, web security and certificate validation.
+
+The shared-hosting search service receives separate PHP syntax/JSON validation and live endpoint smoke tests. Protected server directories ship with `.htaccess` denial rules.
 
 ## Reporting a vulnerability
 
-Use GitHub's private vulnerability reporting / Security Advisory flow for this repository when available. Do not publish proof-of-concept exploit details in a public issue before a fix is available.
+Use GitHub private vulnerability reporting / Security Advisory facilities for this repository when available. Do not publish exploit details in a public issue before a fix is ready.
 
-Useful reports include:
+Include the Ghosium version, Chromium revision, Windows version, reproduction steps and whether the issue reproduces in upstream Chromium. For `search.ghosium.com`, also identify the affected endpoint and PHP version without including API keys or private configuration values.
 
-- affected Ghosium version
-- exact Chromium revision from `BUILD-INFO.json`
-- Windows version and architecture
-- minimal reproduction steps
-- expected versus observed behavior
-- whether the issue also reproduces in upstream Chromium
+## Upstream issues
 
-## Security properties checked by CI
-
-The release workflow verifies that:
-
-- the legacy runtime source tree is absent
-- the custom programming-language code is C++ only
-- extension JSON parses successfully
-- the Manifest V3 ruleset contains no duplicate rule IDs
-- the C++ launcher is built with common Windows binary mitigations
-- required runtime and privacy files are present
-- the Chromium runtime starts successfully in a headless smoke test
-- release artifacts receive SHA-256 checksums
-- stable release publication never uses a pre-release flag
-
-## Out of scope
-
-Bugs that reproduce unchanged in the exact upstream Chromium revision should normally be reported to the Chromium project as well. Ghosium cannot safely patch arbitrary Chromium memory-safety or renderer vulnerabilities at the distribution layer; those should be fixed upstream and consumed through a new Chromium revision.
+Vulnerabilities that reproduce unchanged in the exact upstream Chromium revision should also be reported to the Chromium project. Ghosium should consume upstream fixes rather than attempting unsafe distribution-layer workarounds for renderer/sandbox memory-safety flaws.

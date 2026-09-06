@@ -1,67 +1,33 @@
-# Privacy
+# Ghosium Privacy Model
 
-Ghosium Browser is designed so that the Ghosium distribution itself does not require a telemetry or account backend.
+## What Ghosium itself does not collect
 
-## What Ghosium does not collect
+The Ghosium desktop launcher does not implement application analytics, an advertising identifier, behavioral profiling, cloud profile sync or a Ghosium crash-upload backend. The browser profile is stored locally under `%LOCALAPPDATA%\Ghosium Browser\User Data`.
 
-Ghosium-authored components do not intentionally collect or transmit:
+The bundled launcher disables Chromium browser sync, crash reporting, background browser mode, Domain Reliability reporting and hyperlink-auditing pings for the launched runtime.
 
-- browsing history
-- typed URLs
-- search queries
-- bookmarks
-- saved passwords
-- cookies or site storage
-- device advertising identifiers
-- usage analytics
-- crash telemetry
-- a Ghosium user account or synchronized profile
+## Ghosium Search
 
-The bundled new-tab page loads all visual assets locally. It contains no analytics scripts, pixels, remote fonts or background API calls.
+Browser search goes to `https://search.ghosium.com/` rather than a hardcoded third-party search page. The included shared-hosting service does not set tracking cookies and does not keep an application log of raw search queries.
 
-## Local profile
+In local-index mode a query is evaluated against `storage/data/index.json` on the Ghosium Search server. The optional provider mode sends the query from the server to the configured HTTPS provider; if provider mode is enabled, that provider necessarily receives the query. Provider API keys remain server-side.
 
-Chromium profile data is stored under:
+Cache entries use a SHA-256 key derived from the normalized query rather than storing the raw query as the cache key. Rate limiting stores an HMAC identifier for the client network address and time window, not the raw IP address. The hosting company/web server may still maintain infrastructure access logs outside the PHP application.
 
-```text
-%LOCALAPPDATA%\Ghosium Browser\User Data
-```
+## Websites still receive network traffic
 
-The launcher disables Chromium browser sync, so Ghosium does not intentionally synchronize that profile to a Google account.
+Privacy hardening cannot make a website you intentionally visit unable to receive your connection. Destination sites can receive the IP address exposed by your network/VPN, browser headers, requests, cookies and other browser-visible signals. Ghosium's declarative rules reduce selected third-party tracking and common tracking parameters but do not promise universal anti-fingerprinting.
 
-## Network requests you should expect
+Visiting a large platform directly can allow that platform to observe the direct visit. Ghosium therefore cannot truthfully guarantee that any named internet company can never track a user under every browsing scenario.
 
-A browser cannot browse the web without making network requests. The following parties may receive data as a normal consequence of use:
+## Search and navigation separation
 
-- websites you choose to visit
-- your DNS resolver
-- your network or VPN provider
-- your configured search provider
-- browser extensions you install
-- download servers you choose to access
+The browser uses Ghosium Search for non-URL omnibox terms through the bundled search-provider component. Direct URLs are loaded directly by Chromium and are not proxied through Ghosium Search.
 
-The default Ghosium new-tab search form submits queries to DuckDuckGo only when you submit the form. You can instead search from Chromium's omnibox and configure its default search engine through Chromium settings.
+## Sensitive permissions
 
-## Chromium services
+Camera, microphone, location, notifications and other sensitive web capabilities remain controlled by Chromium's normal site-permission UI. Ghosium does not bypass permission prompts to improve compatibility or performance.
 
-Ghosium distributes open-source Chromium without injecting private Google API credentials. Features that require restricted Google APIs may therefore be unavailable. Browser sync is explicitly disabled by the launcher.
+## Security features intentionally retained
 
-Ghosium also starts Chromium with crash reporting and background browser mode disabled. The runtime is still upstream Chromium, so users should review Chromium's own settings and permissions for site-specific behavior.
-
-## Tracker protection
-
-The bundled Manifest V3 component uses only local declarative rules. It blocks a conservative list of well-known third-party advertising/analytics endpoints and removes common campaign/click-tracking query parameters from top-level HTTP(S) navigation.
-
-The ruleset is intentionally small to reduce site breakage. It is not presented as a complete anonymity system and it does not replace DNS filtering, a VPN, Tor or careful site-permission management.
-
-## Permissions
-
-Camera, microphone, location, notifications and related permissions are handled by Chromium's native site-permission UI. Ghosium does not auto-grant those permissions.
-
-## Updates
-
-Ghosium does not install a persistent background updater. Stable releases are distributed through GitHub Releases. This means users are responsible for installing security updates promptly when a new Ghosium release is published.
-
-## Privacy limitations
-
-No browser can promise anonymity merely by blocking trackers. Websites can still observe IP addresses, browser capabilities and data users deliberately submit. Extensions can also broaden the browser's data access. Use extension permissions and site permissions carefully.
+Ghosium does not disable the Chromium sandbox, certificate validation, Site Isolation or other core security boundaries merely to reduce memory usage or network traffic.

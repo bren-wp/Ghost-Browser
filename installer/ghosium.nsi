@@ -217,7 +217,9 @@ cleanup_failed:
 
 normal_install:
   StrCpy $LANGUAGE ${LANG_ENGLISH}
+  IfSilent installer_init_done
   !insertmacro MUI_LANGDLL_DISPLAY
+installer_init_done:
 FunctionEnd
 
 Section "Ghosium Browser" SecMain

@@ -11,6 +11,7 @@ on:
       - 'scripts/*engine*.ps1'
       - 'scripts/generate-engine-brand-assets.py'
       - '.github/workflows/engine-source-audit.yml'
+      - '.github/workflows/full-source-windows-build.yml'
   workflow_dispatch:
 
 permissions:
@@ -36,7 +37,9 @@ jobs:
             'scripts/rebrand-engine-locales.ps1',
             'scripts/rewrite-engine-product-links.ps1',
             'scripts/verify-engine-locales.ps1',
-            'scripts/verify-engine-fork.ps1'
+            'scripts/verify-engine-fork.ps1',
+            'scripts/configure-engine-build.ps1',
+            'scripts/verify-engine-build-output.ps1'
           )) {
             $tokens = $null
             $errors = $null
@@ -49,6 +52,49 @@ jobs:
               $errors | ForEach-Object { Write-Error $_.Message }
               throw "PowerShell parser errors found in $path"
             }
+          }
+
+      - name: Validate Windows source-build contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $argsPath = 'engine/build/windows-x64.args.gn'
+          if (!(Test-Path $argsPath -PathType Leaf)) {
+            throw "Missing deterministic Windows GN args: $argsPath"
+          }
+          $args = Get-Content $argsPath -Raw
+          foreach ($required in @(
+            'is_debug = false',
+            'is_component_build = false',
+            'is_official_build = false',
+            'is_chrome_branded = false',
+            'target_cpu = "x64"',
+            'use_remoteexec = false'
+          )) {
+            if (!$args.Contains($required)) {
+              throw "Windows source-build args are missing required invariant: $required"
+            }
+          }
+          if ($args -match '(?i)is_chrome_branded\s*=\s*true|is_official_build\s*=\s*true|google_api_key\s*=|google_default_client_(?:id|secret)\s*=') {
+            throw 'Windows source-build args contain forbidden Google/proprietary configuration.'
+          }
+
+          $workflow = Get-Content '.github/workflows/full-source-windows-build.yml' -Raw
+          foreach ($requiredWorkflowText in @(
+            'workflow_dispatch:',
+            'ghosium-source-builder',
+            'bootstrap-engine-source.ps1',
+            'apply-engine-branding.ps1',
+            'configure-engine-build.ps1',
+            'autoninja -C out/Ghosium chrome mini_installer',
+            'verify-engine-build-output.ps1'
+          )) {
+            if (!$workflow.Contains($requiredWorkflowText)) {
+              throw "Full-source Windows workflow is missing required stage: $requiredWorkflowText"
+            }
+          }
+          if ($workflow -match '(?m)^\s*pull_request\s*:') {
+            throw 'Heavy full-source Windows build must remain manual/self-hosted and must not run on every PR.'
           }
 
       - name: Validate deterministic brand asset generator

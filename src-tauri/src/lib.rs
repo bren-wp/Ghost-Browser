@@ -21,6 +21,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             browser::create_tab,
             browser::set_active_tab,
+            browser::set_overlay_open,
             browser::navigate_tab,
             browser::close_tab,
             browser::reload_tab,

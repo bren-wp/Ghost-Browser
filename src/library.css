@@ -1,0 +1,269 @@
+.bookmark-button {
+  min-width: 34px;
+  width: 34px;
+  padding: 0;
+  font-size: 18px;
+}
+
+.library-drawer {
+  position: absolute;
+  z-index: 45;
+  top: 104px;
+  right: 12px;
+  width: min(470px, calc(100vw - 24px));
+  max-height: calc(100vh - 116px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  background: rgba(24, 26, 33, 0.992);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(calc(100% + 28px));
+  transition: 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.library-drawer.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.library-header {
+  min-height: 68px;
+  padding: 14px 14px 11px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.065);
+}
+
+.library-header small {
+  display: block;
+  color: #8ea7ff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+.library-header h2 {
+  margin: 2px 0 0;
+  font-size: 20px;
+  font-weight: 650;
+}
+
+.library-close,
+.library-icon {
+  border: 0;
+  color: #d7dbe4;
+  background: transparent;
+  border-radius: 9px;
+}
+
+.library-close {
+  width: 36px;
+  height: 36px;
+  font-size: 22px;
+}
+
+.library-close:hover,
+.library-icon:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.library-content {
+  max-height: calc(100vh - 185px);
+  padding: 10px;
+  overflow: auto;
+  user-select: text;
+}
+
+.library-empty {
+  padding: 34px 18px;
+  color: #8f97a6;
+  text-align: center;
+  font-size: 13px;
+}
+
+.library-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 8px;
+}
+
+.library-list {
+  display: grid;
+  gap: 6px;
+}
+
+.library-item {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.library-item:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.library-main {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  padding: 11px 12px;
+  color: #eef1f7;
+  background: transparent;
+  text-align: left;
+  display: grid;
+  gap: 3px;
+}
+
+.library-main.static {
+  cursor: default;
+}
+
+.library-main strong,
+.library-main span,
+.library-main small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-main strong {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.library-main span,
+.library-main small {
+  color: #8f97a6;
+  font-size: 10.5px;
+}
+
+.library-icon {
+  width: 36px;
+  margin: 5px;
+  font-size: 18px;
+}
+
+.library-icon.danger:hover {
+  color: #fff;
+  background: rgba(196, 43, 28, 0.75);
+}
+
+.library-primary,
+.library-secondary {
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  min-height: 32px;
+  padding: 0 11px;
+  font-size: 11px;
+}
+
+.library-primary {
+  border-color: rgba(142, 167, 255, 0.38);
+  background: rgba(142, 167, 255, 0.17);
+  color: #edf1ff;
+}
+
+.library-primary:hover {
+  background: rgba(142, 167, 255, 0.25);
+}
+
+.library-secondary {
+  background: rgba(255, 255, 255, 0.045);
+  color: #d5dae5;
+}
+
+.library-secondary:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.library-create {
+  margin: 0 0 10px;
+  border: 1px solid rgba(142, 167, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(142, 167, 255, 0.035);
+}
+
+.library-create summary {
+  padding: 10px 12px;
+  cursor: default;
+  color: #cbd5ff;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.vault-form {
+  display: grid;
+  gap: 9px;
+  padding: 2px 12px 12px;
+}
+
+.vault-form label {
+  display: grid;
+  gap: 4px;
+}
+
+.vault-form label span {
+  color: #9da5b4;
+  font-size: 10px;
+}
+
+.vault-form input {
+  width: 100%;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 9px;
+  outline: 0;
+  padding: 0 10px;
+  color: #f2f4f9;
+  background: #111319;
+  user-select: text;
+}
+
+.vault-form input:focus {
+  border-color: rgba(142, 167, 255, 0.58);
+  box-shadow: 0 0 0 2px rgba(142, 167, 255, 0.1);
+}
+
+.vault-note {
+  margin: 0;
+  color: #7f8796;
+  font-size: 9.5px;
+  line-height: 1.4;
+}
+
+.vault-item {
+  align-items: center;
+}
+
+.vault-buttons {
+  padding: 5px 5px 5px 0;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.vault-buttons .library-icon {
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .library-drawer {
+    top: 100px;
+    right: 6px;
+    width: calc(100vw - 12px);
+    max-height: calc(100vh - 106px);
+  }
+
+  .library-content {
+    max-height: calc(100vh - 174px);
+  }
+}

@@ -79,12 +79,26 @@ jobs:
           }
           Copy-Item $setup.FullName (Join-Path $out "Ghost-Browser-Setup.exe")
 
-          $portableHash = (Get-FileHash (Join-Path $out "Ghost-Browser-Portable.exe") -Algorithm SHA256).Hash.ToLower()
-          $setupHash = (Get-FileHash (Join-Path $out "Ghost-Browser-Setup.exe") -Algorithm SHA256).Hash.ToLower()
+          $portableOut = Get-Item (Join-Path $out "Ghost-Browser-Portable.exe")
+          $setupOut = Get-Item (Join-Path $out "Ghost-Browser-Setup.exe")
+          $maxPortableBytes = 20MB
+          $maxSetupBytes = 15MB
+          if ($portableOut.Length -gt $maxPortableBytes) {
+            throw "Portable executable exceeds the 20 MB Ghost Browser size budget"
+          }
+          if ($setupOut.Length -gt $maxSetupBytes) {
+            throw "Setup executable exceeds the 15 MB Ghost Browser size budget"
+          }
+
+          $portableHash = (Get-FileHash $portableOut.FullName -Algorithm SHA256).Hash.ToLower()
+          $setupHash = (Get-FileHash $setupOut.FullName -Algorithm SHA256).Hash.ToLower()
           @(
             "$portableHash  Ghost-Browser-Portable.exe",
             "$setupHash  Ghost-Browser-Setup.exe"
           ) | Set-Content (Join-Path $out "SHA256SUMS.txt") -Encoding ascii
+
+          Write-Host "Portable size: $([math]::Round($portableOut.Length / 1MB, 2)) MB"
+          Write-Host "Setup size: $([math]::Round($setupOut.Length / 1MB, 2)) MB"
 
       - name: Upload Windows binaries
         uses: actions/upload-artifact@v4
@@ -103,7 +117,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $tag = "v0.4.0"
           $title = "Ghost Browser v0.4.0"
-          $notes = "Production Windows build of Ghost Browser v0.4.0 with stricter native tracking prevention, local request filtering, hardened remote WebViews, improved tab restore stability and Memory Saver tuned for up to 320-tab scheduler testing with at most 8 live WebViews. Includes Portable.exe, Setup.exe and SHA256 checksums."
+          $notes = "Production Windows build of Ghost Browser v0.4.0 with strict tracking prevention, local request filtering, hardened remote WebViews, improved media permission compatibility, tab restore stability and Memory Saver tuned for a 320-tab scheduler with at most 8 live WebViews. Includes Portable.exe, Setup.exe and SHA256 checksums."
 
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {

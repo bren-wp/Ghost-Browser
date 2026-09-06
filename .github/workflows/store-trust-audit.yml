@@ -1,0 +1,82 @@
+name: Ghosium Store Trust Audit
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'store-web/**'
+      - 'scripts/verify-store.php'
+      - 'extension/manifest.json'
+      - 'search-provider/manifest.json'
+      - '.github/workflows/store-trust-audit.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'store-web/**'
+      - 'scripts/verify-store.php'
+      - 'extension/manifest.json'
+      - 'search-provider/manifest.json'
+      - '.github/workflows/store-trust-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  trust-audit:
+    name: Verify Store schema and cryptographic trust
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Validate PHP runtime and syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -v
+          php -m | grep -qi '^sodium$'
+          find store-web -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+          php -l scripts/verify-store.php
+
+      - name: Validate Store JSON data
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -r 'foreach (glob("store-web/storage/data/*.json") as $file) { json_decode(file_get_contents($file), true, 64, JSON_THROW_ON_ERROR); echo "valid $file\n"; }'
+
+      - name: Verify package trust and bundled manifests
+        shell: bash
+        run: php scripts/verify-store.php
+
+      - name: Verify private Store paths are Apache-denied
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'Require all denied' store-web/storage/.htaccess
+          grep -Fq 'Require all denied' store-web/lib/.htaccess
+          grep -Fq 'Options -Indexes' store-web/packages/.htaccess
+          grep -Fq 'application/x-chrome-extension' store-web/packages/.htaccess
+
+      - name: Smoke test Store APIs
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -S 127.0.0.1:8100 -t store-web >/tmp/ghosium-store.log 2>&1 &
+          server_pid=$!
+          trap 'kill $server_pid 2>/dev/null || true' EXIT
+          sleep 1
+
+          curl --fail --silent --show-error http://127.0.0.1:8100/ | grep -q 'Ghosium Store'
+          curl --fail --silent --show-error http://127.0.0.1:8100/api/catalog.php | grep -q '"schemaVersion":1'
+          curl --fail --silent --show-error 'http://127.0.0.1:8100/api/update.php?id=ghosium-search&version=0.7.0' | grep -q '"updateAvailable":false'
+          curl --fail --silent --show-error http://127.0.0.1:8100/api/revocations.php | grep -q '"revocations":[]'
+          curl --fail --silent --show-error http://127.0.0.1:8100/api/keys.php | grep -q '"keys":[]'
+
+          status=$(curl --silent --output /tmp/store-invalid.json --write-out '%{http_code}' 'http://127.0.0.1:8100/api/update.php?id=BAD%20ID&version=x')
+          test "$status" = '400'
+          grep -q '"error":"invalid_request"' /tmp/store-invalid.json

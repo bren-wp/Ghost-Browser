@@ -16,14 +16,14 @@ jobs:
   build-windows:
     name: Build Windows x64
     runs-on: windows-2025
-    timeout-minutes: 40
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -53,7 +53,7 @@ jobs:
       - name: Check Rust
         run: cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
 
-      - name: Test Rust and 160-tab scheduler
+      - name: Test Rust and 320-tab scheduler
         run: cargo test --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc --lib
 
       - name: Build Ghost Browser and NSIS installer
@@ -101,9 +101,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = "Stop"
-          $tag = "v0.3.0"
-          $title = "Ghost Browser v0.3.0"
-          $notes = "Production Windows build of Ghost Browser v0.3.0 with same-tab private search flow, Memory Saver, hardened navigation and a 160-tab scheduler stress test. Includes Portable.exe, Setup.exe and SHA256 checksums."
+          $tag = "v0.4.0"
+          $title = "Ghost Browser v0.4.0"
+          $notes = "Production Windows build of Ghost Browser v0.4.0 with stricter native tracking prevention, local request filtering, hardened remote WebViews, improved tab restore stability and Memory Saver tuned for up to 320-tab scheduler testing with at most 8 live WebViews. Includes Portable.exe, Setup.exe and SHA256 checksums."
 
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {

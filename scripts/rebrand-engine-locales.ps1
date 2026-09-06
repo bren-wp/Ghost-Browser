@@ -15,6 +15,8 @@ $legalChromiumIds = @(
   '7681937895330411637'
 )
 $chromiumWord = [regex]::new('\bChromium\b')
+$chromiumProductStem = [regex]::new('\bChromium(?=\p{Ll}|\b)')
+$chromeProductStem = [regex]::new('\bChrome(?=\p{Ll}|\b)')
 
 function Get-TranslationLocaleCode {
   param([Parameter(Mandatory = $true)][string]$Locale)
@@ -41,14 +43,19 @@ function Replace-ProductBrandingInBody {
   $updated = $updated.Replace('Google Chrome', 'Ghosium Browser')
 
   if ($PreserveChromiumProject -and $legalChromiumIds -contains $TranslationId) {
-    # The first Chromium token names the running product; later Chromium tokens
-    # identify the upstream open-source project and must remain legal attribution.
+    # Legal messages deliberately retain Chromium as the upstream project name.
+    # Replace only the first standalone product token and leave the linked
+    # upstream project token intact.
     $updated = $chromiumWord.Replace($updated, 'Ghosium Browser', 1)
   } else {
-    $updated = $chromiumWord.Replace($updated, 'Ghosium Browser')
+    # Several locales inflect brand names (for example Croatian Chromiuma /
+    # Chromiumu). Match a lowercase grammatical suffix as well as a standalone
+    # token, but intentionally do not consume uppercase compounds such as
+    # ChromiumOS/ChromeOS.
+    $updated = $chromiumProductStem.Replace($updated, 'Ghosium Browser')
+    $updated = $chromeProductStem.Replace($updated, 'Ghosium Browser')
   }
 
-  $updated = [regex]::Replace($updated, '\bChrome\b', 'Ghosium Browser')
   $updated = $updated.Replace('Ghosium Browser browser', 'Ghosium Browser')
   return $updated
 }

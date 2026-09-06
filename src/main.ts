@@ -39,6 +39,29 @@ interface ClosedTab {
   url: string | null;
 }
 
+interface OmniboxSuggestion {
+  title: string;
+  url: string;
+  kind: "bookmark" | "history";
+}
+
+interface SuggestionChoice {
+  title: string;
+  value: string;
+  kind: "input" | "bookmark" | "history";
+  detail: string;
+}
+
+interface SuggestionState {
+  input: HTMLInputElement;
+  box: HTMLElement;
+  items: SuggestionChoice[];
+  selected: number;
+  requestId: number;
+  timer: number | undefined;
+  clearAfterNavigate: boolean;
+}
+
 const MAX_CLOSED_TABS = 25;
 const appWindow = getCurrentWindow();
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -65,11 +88,13 @@ app.innerHTML = `
         <form id="omnibox-form" class="omnibox" autocomplete="off">
           <span id="connection-icon" class="connection-icon" aria-hidden="true">◈</span>
           <input id="omnibox" type="text" spellcheck="false" autocapitalize="off" autocomplete="off"
-                 maxlength="8192" aria-label="Adresa i pretraživanje"
+                 maxlength="8192" aria-label="Adresa i pretraživanje" aria-autocomplete="list"
+                 aria-controls="omnibox-suggestions" aria-expanded="false"
                  placeholder="Pretraži web ili upiši web-adresu" />
           <button type="button" id="shield" class="shield" title="Ghost zaštita" aria-label="Ghost zaštita">
             <span class="shield-icon">◆</span><span id="blocked-count">0</span>
           </button>
+          <div id="omnibox-suggestions" class="omnibox-suggestions" role="listbox" aria-label="Prijedlozi pretraživanja"></div>
         </form>
         <button id="privacy" class="icon-button toolbar-action" title="Privatnost" aria-label="Privatnost">◌</button>
         <button id="menu" class="icon-button toolbar-action" title="Izbornik" aria-label="Izbornik" aria-expanded="false">⋯</button>
@@ -81,11 +106,13 @@ app.innerHTML = `
         <div class="hero-mark">G</div>
         <h1>Ghost Browser</h1>
         <p>Brzo. Privatno. Pod vašom kontrolom.</p>
-        <form id="newtab-search" class="newtab-search" autocomplete="off">
+        <form id="newtab-search" class="newtab-search suggestion-host" autocomplete="off">
           <span aria-hidden="true">⌕</span>
           <input id="newtab-input" type="text" maxlength="8192"
                  placeholder="Pretraži web ili upiši adresu" spellcheck="false" autocomplete="off"
-                 aria-label="Pretraživanje ili web-adresa" />
+                 aria-label="Pretraživanje ili web-adresa" aria-autocomplete="list"
+                 aria-controls="newtab-suggestions" aria-expanded="false" />
+          <div id="newtab-suggestions" class="omnibox-suggestions newtab-suggestions" role="listbox" aria-label="Prijedlozi pretraživanja"></div>
         </form>
         <div class="privacy-cards">
           <article><strong>Zaštita od praćenja</strong><span>Poznati trackeri i oglasne mreže blokiraju se prije prikaza.</span></article>
@@ -127,6 +154,8 @@ app.innerHTML = `
 const tabsEl = document.querySelector<HTMLDivElement>("#tabs")!;
 const omnibox = document.querySelector<HTMLInputElement>("#omnibox")!;
 const newtabInput = document.querySelector<HTMLInputElement>("#newtab-input")!;
+const omniboxSuggestionBox = document.querySelector<HTMLElement>("#omnibox-suggestions")!;
+const newtabSuggestionBox = document.querySelector<HTMLElement>("#newtab-suggestions")!;
 const newtab = document.querySelector<HTMLElement>("#newtab")!;
 const blockedCount = document.querySelector<HTMLSpanElement>("#blocked-count")!;
 const connectionIcon = document.querySelector<HTMLSpanElement>("#connection-icon")!;
@@ -145,6 +174,27 @@ let memoryRefreshTimer: number | undefined;
 let viewportFrame: number | null = null;
 let overlayOpen = false;
 
+const omniboxSuggestionState: SuggestionState = {
+  input: omnibox,
+  box: omniboxSuggestionBox,
+  items: [],
+  selected: -1,
+  requestId: 0,
+  timer: undefined,
+  clearAfterNavigate: false,
+};
+
+const newtabSuggestionState: SuggestionState = {
+  input: newtabInput,
+  box: newtabSuggestionBox,
+  items: [],
+  selected: -1,
+  requestId: 0,
+  timer: undefined,
+  clearAfterNavigate: true,
+};
+
+const suggestionStates = [omniboxSuggestionState, newtabSuggestionState];
 const activeTab = () => tabs.find((tab) => tab.id === activeTabId);
 const escapeHtml = (value: string) =>
   value
@@ -173,6 +223,157 @@ async function safeAction(action: () => Promise<void>): Promise<void> {
   } catch (error) {
     showToast(userError(error));
   }
+}
+
+function hideSuggestions(state?: SuggestionState): void {
+  const states = state ? [state] : suggestionStates;
+  for (const item of states) {
+    if (item.timer !== undefined) {
+      window.clearTimeout(item.timer);
+      item.timer = undefined;
+    }
+    item.requestId += 1;
+    item.items = [];
+    item.selected = -1;
+    item.box.innerHTML = "";
+    item.box.classList.remove("open");
+    item.input.setAttribute("aria-expanded", "false");
+    item.input.removeAttribute("aria-activedescendant");
+  }
+}
+
+function suggestionLabel(kind: SuggestionChoice["kind"]): string {
+  if (kind === "bookmark") return "Favorit";
+  if (kind === "history") return "Povijest";
+  return "Pretraži ili otvori";
+}
+
+function renderSuggestions(state: SuggestionState): void {
+  if (state.items.length === 0 || document.activeElement !== state.input) {
+    state.box.innerHTML = "";
+    state.box.classList.remove("open");
+    state.input.setAttribute("aria-expanded", "false");
+    state.input.removeAttribute("aria-activedescendant");
+    return;
+  }
+
+  state.box.innerHTML = state.items.map((item, index) => {
+    const selected = index === state.selected;
+    const id = `${state.box.id}-item-${index}`;
+    const glyph = item.kind === "bookmark" ? "★" : item.kind === "history" ? "↻" : "⌕";
+    return `<button type="button" id="${id}" class="omnibox-suggestion${selected ? " selected" : ""}" role="option" aria-selected="${selected}" data-suggestion-index="${index}">
+      <span class="suggestion-glyph" aria-hidden="true">${glyph}</span>
+      <span class="suggestion-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small></span>
+      <span class="suggestion-kind">${suggestionLabel(item.kind)}</span>
+    </button>`;
+  }).join("");
+
+  state.box.classList.add("open");
+  state.input.setAttribute("aria-expanded", "true");
+  if (state.selected >= 0) {
+    state.input.setAttribute("aria-activedescendant", `${state.box.id}-item-${state.selected}`);
+  } else {
+    state.input.removeAttribute("aria-activedescendant");
+  }
+}
+
+function buildSuggestionChoices(raw: string, local: OmniboxSuggestion[]): SuggestionChoice[] {
+  const value = raw.trim();
+  if (!value) return [];
+
+  const choices: SuggestionChoice[] = [{
+    title: value,
+    value,
+    kind: "input",
+    detail: "Pretraživanje ili izravna web-adresa",
+  }];
+
+  for (const item of local) {
+    choices.push({
+      title: item.title || item.url,
+      value: item.url,
+      kind: item.kind,
+      detail: item.url,
+    });
+  }
+  return choices;
+}
+
+function scheduleSuggestions(state: SuggestionState, delay = 55): void {
+  if (state.timer !== undefined) window.clearTimeout(state.timer);
+  const raw = state.input.value.trim();
+  if (!raw) {
+    hideSuggestions(state);
+    return;
+  }
+
+  const requestId = ++state.requestId;
+  state.timer = window.setTimeout(() => {
+    state.timer = undefined;
+    void safeAction(async () => {
+      const local = await invoke<OmniboxSuggestion[]>("omnibox_suggestions", { input: raw });
+      if (requestId !== state.requestId || state.input.value.trim() !== raw) return;
+      state.items = buildSuggestionChoices(raw, local);
+      state.selected = -1;
+      renderSuggestions(state);
+    });
+  }, delay);
+}
+
+async function chooseSuggestion(state: SuggestionState, index: number): Promise<void> {
+  const choice = state.items[index];
+  if (!choice) return;
+  const value = choice.value;
+  hideSuggestions();
+  await navigateRaw(value);
+  if (state.clearAfterNavigate) state.input.value = "";
+}
+
+function moveSuggestionSelection(state: SuggestionState, direction: 1 | -1): void {
+  if (state.items.length === 0) {
+    scheduleSuggestions(state, 0);
+    return;
+  }
+  const next = state.selected < 0
+    ? (direction > 0 ? 0 : state.items.length - 1)
+    : (state.selected + direction + state.items.length) % state.items.length;
+  state.selected = next;
+  renderSuggestions(state);
+}
+
+function attachSuggestionInteractions(state: SuggestionState): void {
+  state.input.addEventListener("input", () => scheduleSuggestions(state));
+  state.input.addEventListener("focus", () => scheduleSuggestions(state, 0));
+  state.input.addEventListener("blur", () => {
+    window.setTimeout(() => {
+      if (!state.box.contains(document.activeElement)) hideSuggestions(state);
+    }, 100);
+  });
+  state.input.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveSuggestionSelection(state, 1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveSuggestionSelection(state, -1);
+    } else if (event.key === "Enter" && state.selected >= 0) {
+      event.preventDefault();
+      void safeAction(() => chooseSuggestion(state, state.selected));
+    } else if (event.key === "Escape" && state.box.classList.contains("open")) {
+      event.preventDefault();
+      event.stopPropagation();
+      hideSuggestions(state);
+    }
+  });
+
+  state.box.addEventListener("pointerdown", (event) => event.preventDefault());
+  state.box.addEventListener("click", (event) => {
+    const target = (event.target as HTMLElement).closest<HTMLElement>("[data-suggestion-index]");
+    if (!target?.dataset.suggestionIndex) return;
+    const index = Number(target.dataset.suggestionIndex);
+    if (!Number.isInteger(index)) return;
+    void safeAction(() => chooseSuggestion(state, index));
+  });
 }
 
 function renderTabs(): void {
@@ -234,6 +435,7 @@ async function setOverlay(open: boolean): Promise<void> {
 }
 
 async function closeOverlays(): Promise<void> {
+  hideSuggestions();
   await setOverlay(false);
   privacyPanel.classList.remove("open");
   privacyPanel.setAttribute("aria-hidden", "true");
@@ -243,6 +445,7 @@ async function closeOverlays(): Promise<void> {
 }
 
 async function openPrivacyPanel(): Promise<void> {
+  hideSuggestions();
   await setOverlay(true);
   appMenu.classList.remove("open");
   appMenu.setAttribute("aria-hidden", "true");
@@ -252,6 +455,7 @@ async function openPrivacyPanel(): Promise<void> {
 }
 
 async function toggleMenu(): Promise<void> {
+  hideSuggestions();
   const opening = !appMenu.classList.contains("open");
   await setOverlay(opening);
   privacyPanel.classList.remove("open");
@@ -325,6 +529,7 @@ async function navigateTab(tabId: string, raw: string): Promise<void> {
     ? { url: tab.url, loading: tab.loading, hasWebview: tab.hasWebview, discarded: tab.discarded }
     : null;
 
+  hideSuggestions();
   omnibox.blur();
   if (tab) {
     tab.url = target;
@@ -422,6 +627,9 @@ function scheduleViewportSync(): void {
   });
 }
 
+attachSuggestionInteractions(omniboxSuggestionState);
+attachSuggestionInteractions(newtabSuggestionState);
+
 document.querySelector("#new-tab")!.addEventListener("click", () => void safeAction(async () => {
   await closeOverlays();
   await createTab(true);
@@ -429,12 +637,15 @@ document.querySelector("#new-tab")!.addEventListener("click", () => void safeAct
 
 document.querySelector<HTMLFormElement>("#omnibox-form")!.addEventListener("submit", (event) => {
   event.preventDefault();
-  void safeAction(() => navigateRaw(omnibox.value));
+  const value = omnibox.value;
+  hideSuggestions();
+  void safeAction(() => navigateRaw(value));
 });
 
 document.querySelector<HTMLFormElement>("#newtab-search")!.addEventListener("submit", (event) => {
   event.preventDefault();
   const value = newtabInput.value;
+  hideSuggestions();
   void safeAction(async () => {
     await navigateRaw(value);
     newtabInput.value = "";
@@ -529,6 +740,7 @@ window.addEventListener("keydown", (event) => {
     void safeAction(closeOverlays);
     omnibox.focus();
     omnibox.select();
+    scheduleSuggestions(omniboxSuggestionState, 0);
   } else if (event.ctrlKey && event.shiftKey && key === "t") {
     event.preventDefault();
     void safeAction(reopenClosedTab);
@@ -563,6 +775,7 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
     void safeAction(() => invoke("reload_tab", { tabId: activeTabId! }));
   } else if (event.key === "Escape") {
+    hideSuggestions();
     void safeAction(closeOverlays);
   }
 });

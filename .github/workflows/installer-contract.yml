@@ -1,0 +1,86 @@
+name: Ghosium Windows Installer Contract
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'installer/**'
+      - 'scripts/**'
+      - '.github/workflows/windows-build.yml'
+      - '.github/workflows/full-source-windows-build.yml'
+      - '.github/workflows/installer-contract.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'installer/**'
+      - 'scripts/**'
+      - '.github/workflows/windows-build.yml'
+      - '.github/workflows/full-source-windows-build.yml'
+      - '.github/workflows/installer-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installer-contract:
+    name: Verify install and uninstall architecture
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Reject standalone uninstall executables
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if find . -type f \( -iname 'uninstall.exe' -o -iname 'ghosium-uninstall.exe' -o -iname 'ghosium-browser-uninstall.exe' \) -print -quit | grep -q .; then
+            echo 'A standalone uninstall executable is forbidden.' >&2
+            exit 1
+          fi
+
+          if grep -nE 'WriteUninstaller|MUI_UNPAGE_|Section[[:space:]]+"Uninstall"|Uninstall\.exe' installer/ghosium.nsi; then
+            echo 'installer/ghosium.nsi must use the setup executable for uninstall instead of generating Uninstall.exe.' >&2
+            exit 1
+          fi
+
+      - name: Verify same-setup uninstall registration
+        shell: bash
+        run: |
+          set -euo pipefail
+          installer='installer/ghosium.nsi'
+
+          required=(
+            '!define INSTALLED_SETUP "Installer\\Ghosium-Browser-Setup.exe"'
+            '${GetOptions} $R0 "/UNINSTALL" $R1'
+            'CopyFiles /SILENT "$EXEPATH" "$INSTDIR\\${INSTALLED_SETUP}"'
+            '"UninstallString"'
+            '${INSTALLED_SETUP}$\\" /UNINSTALL'
+            '"QuietUninstallString"'
+            '${INSTALLED_SETUP}$\\" /UNINSTALL /S'
+            'Call RemoveGhosium'
+          )
+
+          for needle in "${required[@]}"; do
+            if ! grep -Fq "$needle" "$installer"; then
+              echo "Missing single-setup uninstall invariant: $needle" >&2
+              exit 1
+            fi
+          done
+
+      - name: Verify full-source uninstall contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq "setup.exe --uninstall" scripts/verify-engine-build-output.ps1
+          grep -Fq "standaloneExecutable = \$false" scripts/verify-engine-build-output.ps1
+
+          if grep -Ei 'copy-item.*uninstall\.exe|upload.*uninstall\.exe|ghosium-(browser-)?uninstall\.exe' .github/workflows/full-source-windows-build.yml; then
+            echo 'Full-source workflow must not package a standalone uninstaller.' >&2
+            exit 1
+          fi

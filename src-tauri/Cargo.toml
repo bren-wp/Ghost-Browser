@@ -1,6 +1,6 @@
 [package]
 name = "ghost-browser"
-version = "0.4.0"
+version = "0.5.0"
 description = "Ghost Browser - privacy-first Windows browser"
 authors = ["Brendigo"]
 edition = "2024"
@@ -29,6 +29,7 @@ adblock = { version = "0.13.3", default-features = false, features = ["embedded-
 [target.'cfg(windows)'.dependencies]
 webview2-com = "=0.38.2"
 windows = { version = "=0.61.3", features = ["Win32_Foundation", "Win32_System_Com"] }
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security_Credentials"] }
 
 [profile.release]
 opt-level = 3

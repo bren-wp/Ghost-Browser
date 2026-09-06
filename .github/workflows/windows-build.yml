@@ -57,7 +57,7 @@ jobs:
           if (Select-String -Path "src-tauri/src/profile.rs" -Pattern "pub\s+(password|secret)\s*:" -Quiet) {
             throw "Plaintext secret field found in Ghost profile storage"
           }
-          foreach ($requiredFile in @("src/overlay.ts", "src-tauri/src/suggestions.rs", "src/browser-ui.css")) {
+          foreach ($requiredFile in @("src/overlay.ts", "src-tauri/src/suggestions.rs", "src/browser-ui.css", "src-tauri/src/cleanup.rs")) {
             if (!(Test-Path $requiredFile)) {
               throw "Required production module is missing: $requiredFile"
             }
@@ -72,6 +72,9 @@ jobs:
           if (!$main.Contains('"omnibox_suggestions"')) {
             throw "Production shell is not wired to the local omnibox suggestion engine"
           }
+          if (!$main.Contains('"resolve_omnibox_input"')) {
+            throw "Production shell is not wired to the tested omnibox resolver"
+          }
           if (!$main.Contains('from "./overlay"')) {
             throw "Production shell is not wired to overlay coordination"
           }
@@ -79,6 +82,23 @@ jobs:
           if (!$library.Contains('from "./overlay"')) {
             throw "Library UI is not wired to overlay coordination"
           }
+          $lib = Get-Content "src-tauri/src/lib.rs" -Raw
+          if (!$lib.Contains("cleanup::clear_browsing_data")) {
+            throw "Global clear action is not routed through complete profile cleanup"
+          }
+
+          $packageVersion = (Get-Content "package.json" -Raw | ConvertFrom-Json).version
+          $tauriVersion = (Get-Content "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json).version
+          $cargoText = Get-Content "src-tauri/Cargo.toml" -Raw
+          $cargoVersionMatch = [regex]::Match($cargoText, '(?ms)^\[package\]\s.*?^version\s*=\s*"([^"]+)"')
+          if (!$cargoVersionMatch.Success) {
+            throw "Could not read Cargo package version"
+          }
+          $cargoVersion = $cargoVersionMatch.Groups[1].Value
+          if ($packageVersion -ne $tauriVersion -or $packageVersion -ne $cargoVersion) {
+            throw "Version mismatch: package.json=$packageVersion tauri=$tauriVersion Cargo=$cargoVersion"
+          }
+          Write-Host "Validated Ghost Browser version $packageVersion"
 
       - name: Check frontend
         run: npm run build
@@ -173,14 +193,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = "Stop"
-          $tag = "v0.5.0"
-          $title = "Ghost Browser v0.5.0"
-          $notes = "Production Windows build of Ghost Browser v0.5.0 with hardened browser interactions, a Chromium-based renderer, tested same-tab omnibox resolution, local Chrome-like suggestions from Favorites and History, local Favorites/History/Downloads, a Windows Credential Manager-protected Password Vault, privacy-first direct TLS Ghost Mail, strict tracking prevention, coordinated native overlays, startup smoke testing and Memory Saver with a 320-tab scheduler. Includes Portable.exe, Setup.exe and SHA256 checksums."
+          $version = (Get-Content "package.json" -Raw | ConvertFrom-Json).version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Invalid release version: $version"
+          }
+          $tag = "v$version"
+          $title = "Ghost Browser v$version"
+          $notes = "Production Windows build of Ghost Browser v$version with hardened browser interactions, tested same-tab omnibox resolution, local Chrome-like suggestions from Favorites, History and open tabs, complete browsing-data cleanup, a Windows Credential Manager-protected Password Vault, privacy-first direct TLS Ghost Mail, strict tracking prevention, coordinated overlays, startup smoke testing and Memory Saver with a 320-tab scheduler. Includes Portable.exe, Setup.exe and SHA256 checksums."
 
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag artifacts/Ghost-Browser-Portable.exe artifacts/Ghost-Browser-Setup.exe artifacts/SHA256SUMS.txt --clobber --repo $env:GITHUB_REPOSITORY
-            gh release edit $tag --title $title --notes $notes --repo $env:GITHUB_REPOSITORY
-          } else {
-            gh release create $tag artifacts/Ghost-Browser-Portable.exe artifacts/Ghost-Browser-Setup.exe artifacts/SHA256SUMS.txt --target $env:GITHUB_SHA --title $title --notes $notes --repo $env:GITHUB_REPOSITORY
+            Write-Host "Release $tag already exists. Existing release assets are immutable; skipping publication."
+            exit 0
           }
+
+          gh release create $tag artifacts/Ghost-Browser-Portable.exe artifacts/Ghost-Browser-Setup.exe artifacts/SHA256SUMS.txt --target $env:GITHUB_SHA --title $title --notes $notes --repo $env:GITHUB_REPOSITORY

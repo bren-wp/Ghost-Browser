@@ -36,6 +36,7 @@ jobs:
             'scripts/apply-engine-branding.ps1',
             'scripts/rebrand-engine-locales.ps1',
             'scripts/rewrite-engine-product-links.ps1',
+            'scripts/rewrite-engine-default-search.ps1',
             'scripts/verify-engine-locales.ps1',
             'scripts/verify-engine-fork.ps1',
             'scripts/configure-engine-build.ps1',
@@ -195,6 +196,7 @@ jobs:
           /chrome/browser/resources/signin/managed_user_profile_notice/managed_user_profile_notice_value_prop.html.ts
           /chrome/browser/resources/contextual_tasks/top_toolbar_logo.html.ts
           /components/components_chromium_strings.grd
+          /components/search_engines/template_url_prepopulate_data.cc
           /components/strings/
           /components/vector_icons/chromium/
           /extensions/strings/
@@ -219,6 +221,9 @@ jobs:
           grep -F 'alt="Ghosium logo"' "$CHROMIUM_SRC/chrome/browser/resources/signin/managed_user_profile_notice/managed_user_profile_notice_value_prop.html.ts"
           test "$(grep -Fc 'chrome://theme/current-channel-logo@2x' "$CHROMIUM_SRC/chrome/browser/resources/contextual_tasks/top_toolbar_logo.html.ts")" -ge 2
           grep -F 'aria-label="Ghosium"' "$CHROMIUM_SRC/ui/webui/resources/images/chrome_logo_dark.svg"
+          grep -F 'Ghosium Search' "$CHROMIUM_SRC/components/search_engines/template_url_prepopulate_data.cc"
+          grep -F 'https://search.ghosium.com/?q={searchTerms}' "$CHROMIUM_SRC/components/search_engines/template_url_prepopulate_data.cc"
+          grep -F 'prepopulate_id = 1101' "$CHROMIUM_SRC/components/search_engines/template_url_prepopulate_data.cc"
           if git -C "$CHROMIUM_SRC" status --porcelain=v1 -- third_party | grep -q .; then
             echo "third_party was modified" >&2
             exit 1

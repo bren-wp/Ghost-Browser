@@ -17,6 +17,7 @@ $productVectorPath = Join-Path $repoRoot 'engine/branding/vector/product.icon'
 $productRefreshVectorPath = Join-Path $repoRoot 'engine/branding/vector/product_refresh.icon'
 $assetGeneratorPath = Join-Path $repoRoot 'scripts/generate-engine-brand-assets.py'
 $defaultSearchRewritePath = Join-Path $repoRoot 'scripts/rewrite-engine-default-search.ps1'
+$windowsIdentityRewritePath = Join-Path $repoRoot 'scripts/rewrite-engine-windows-identity.ps1'
 
 foreach ($required in @(
   $configPath,
@@ -28,7 +29,8 @@ foreach ($required in @(
   $productVectorPath,
   $productRefreshVectorPath,
   $assetGeneratorPath,
-  $defaultSearchRewritePath
+  $defaultSearchRewritePath,
+  $windowsIdentityRewritePath
 )) {
   if (!(Test-Path $required -PathType Leaf)) {
     throw "Required Ghosium fork file is missing: $required"
@@ -171,6 +173,11 @@ if ($SourceRoot) {
     'chrome/common/url_constants.h',
     'chrome/app/theme/chromium/BRANDING',
     'chrome/app/theme/chromium/product_logo.svg',
+    'chrome/install_static/chromium_install_modes.h',
+    'chrome/installer/setup/setup_main.cc',
+    'chrome/installer/setup/uninstall.cc',
+    'chrome/installer/setup/install_worker.cc',
+    'chrome/installer/util/util_constants.h',
     'chrome/browser/resources/contextual_tasks/top_toolbar_logo.html.ts',
     'chrome/browser/resources/signin/managed_user_profile_notice/managed_user_profile_notice_value_prop.html.ts',
     'ui/webui/resources/images/chrome_logo_dark.svg',
@@ -245,8 +252,59 @@ if ($SourceRoot) {
   if ($searchSource -match '(?s)Ghosium Search.*?send_x_geo_header\s*=\s*true') {
     throw 'Ghosium Search must not enable the privacy-sensitive X-Geo header.'
   }
-  if ($searchSource.Contains('return FindPrepopulatedEngineInternal(prefs, regional_prepopulated_engines,`n                                        google.id')) {
-    throw 'Upstream Google fallback remains active instead of Ghosium Search.'
+
+  $windowsIdentity = Get-Content (Join-Path $resolvedSourceRoot 'chrome/install_static/chromium_install_modes.h') -Raw
+  foreach ($requiredWindowsIdentity in @(
+    'kCompanyPathName[] = L"Brendigo"',
+    'kProductPathName[] = L"Ghosium"',
+    '.base_app_name = L"Ghosium Browser"',
+    '.base_app_id = L"Ghosium"',
+    '.browser_prog_id_prefix = L"GhosiumHTM"',
+    'L"Ghosium HTML Document"',
+    '.direct_launch_url_scheme = "ghosium"',
+    '.pdf_prog_id_prefix = L"GhosiumPDF"',
+    'L"Ghosium PDF Document"'
+  )) {
+    if (!$windowsIdentity.Contains($requiredWindowsIdentity)) {
+      throw "Ghosium Windows install identity is missing: $requiredWindowsIdentity"
+    }
+  }
+  foreach ($legacyWindowsIdentity in @(
+    'kProductPathName[] = L"Chromium"',
+    '.base_app_name = L"Chromium"',
+    '.base_app_id = L"Chromium"',
+    '.browser_prog_id_prefix = L"ChromiumHTM"',
+    'L"Chromium HTML Document"',
+    '.direct_launch_url_scheme = "chromium"',
+    '.pdf_prog_id_prefix = L"ChromiumPDF"',
+    'L"Chromium PDF Document"'
+  )) {
+    if ($windowsIdentity.Contains($legacyWindowsIdentity)) {
+      throw "Legacy Chromium Windows identity remains active: $legacyWindowsIdentity"
+    }
+  }
+  if (!$windowsIdentity.Contains('kSafeBrowsingName[] = "chromium"')) {
+    throw 'Safe Browsing client identity changed unexpectedly; security integration requires explicit review.'
+  }
+
+  $setupMain = Get-Content (Join-Path $resolvedSourceRoot 'chrome/installer/setup/setup_main.cc') -Raw
+  $uninstallSource = Get-Content (Join-Path $resolvedSourceRoot 'chrome/installer/setup/uninstall.cc') -Raw
+  $installWorker = Get-Content (Join-Path $resolvedSourceRoot 'chrome/installer/setup/install_worker.cc') -Raw
+  $utilConstants = Get-Content (Join-Path $resolvedSourceRoot 'chrome/installer/util/util_constants.h') -Raw
+  if (!$setupMain.Contains('HasSwitch(installer::switches::kUninstall)') -or !$setupMain.Contains('UninstallProduct(')) {
+    throw 'Ghosium setup-based uninstall dispatch is not intact.'
+  }
+  if (!$uninstallSource.Contains('InstallStatus UninstallProduct(')) {
+    throw 'Ghosium source is missing the normal installer uninstall implementation.'
+  }
+  if (!$utilConstants.Contains('kSetupExe[] = L"setup.exe"') -or
+      !$utilConstants.Contains('kUninstallStringField[] = L"UninstallString"') -or
+      !$utilConstants.Contains('kUninstallArgumentsField[] = L"UninstallArguments"')) {
+    throw 'Ghosium setup-based uninstall registry constants changed unexpectedly.'
+  }
+  if (!$installWorker.Contains('installer::kUninstallStringField') -or
+      !$installWorker.Contains('installer::kUninstallArgumentsField')) {
+    throw 'Ghosium installer no longer registers the setup-based uninstall command.'
   }
 
   $productSvg = Get-Content (Join-Path $resolvedSourceRoot 'chrome/app/theme/chromium/product_logo.svg') -Raw

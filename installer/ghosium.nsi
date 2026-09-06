@@ -11,6 +11,9 @@ Unicode true
 !ifndef GHOSIUM_ARTIFACTS
   !error "GHOSIUM_ARTIFACTS must point to the release artifact directory"
 !endif
+!ifndef GHOSIUM_ICON
+  !error "GHOSIUM_ICON must point to the generated Ghosium ICO"
+!endif
 
 !define PRODUCT_NAME "Ghosium Browser"
 !define PRODUCT_PUBLISHER "Brendigo"
@@ -27,6 +30,7 @@ InstallDirRegKey HKCU "${UNINSTALL_KEY}" "InstallLocation"
 RequestExecutionLevel user
 SetCompressor zlib
 ShowInstDetails show
+BrandingText "Ghosium Browser · Brendigo"
 
 VIProductVersion "${GHOSIUM_VERSION}.0"
 VIAddVersionKey /LANG=1033 "ProductName" "Ghosium Browser"
@@ -37,7 +41,7 @@ VIAddVersionKey /LANG=1033 "ProductVersion" "${GHOSIUM_VERSION}"
 VIAddVersionKey /LANG=1033 "LegalCopyright" "Copyright (c) 2026 Brendigo"
 
 !define MUI_ABORTWARNING
-!define MUI_ICON "${NSISDIR}\Contrib\Graphics\Icons\modern-install.ico"
+!define MUI_ICON "${GHOSIUM_ICON}"
 !define MUI_WELCOMEPAGE_TITLE "Ghosium Browser ${GHOSIUM_VERSION}"
 !define MUI_WELCOMEPAGE_TEXT "Welcome to Ghosium Browser.$\r$\n$\r$\nChoose your language, review the Brendigo license, and install Ghosium Browser for your Windows account."
 !define MUI_FINISHPAGE_LINK "Ghosium Support"

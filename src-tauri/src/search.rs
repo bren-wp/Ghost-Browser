@@ -121,6 +121,11 @@ pub async fn resolve_omnibox_input(input: String) -> Result<String, String> {
     resolve_omnibox(&input)
 }
 
+#[tauri::command]
+pub async fn resolve_search_query(query: String) -> Result<String, String> {
+    build_private_search_url(&query)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -11,12 +11,17 @@ Unicode true
 !ifndef GHOSIUM_ARTIFACTS
   !error "GHOSIUM_ARTIFACTS must point to the release artifact directory"
 !endif
+!ifndef GHOSIUM_ICON
+  !error "GHOSIUM_ICON must point to the generated Ghosium ICO"
+!endif
 
 Name "Ghosium Browser Portable ${GHOSIUM_VERSION}"
 OutFile "${GHOSIUM_ARTIFACTS}\Ghosium-Browser-Portable.exe"
+Icon "${GHOSIUM_ICON}"
 RequestExecutionLevel user
 SilentInstall silent
 SetCompressor zlib
+BrandingText "Ghosium Browser · Brendigo"
 
 VIProductVersion "${GHOSIUM_VERSION}.0"
 VIAddVersionKey /LANG=1033 "ProductName" "Ghosium Browser Portable"

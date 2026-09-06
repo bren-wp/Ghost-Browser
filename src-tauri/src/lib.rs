@@ -1,15 +1,19 @@
 mod browser;
 mod privacy;
+mod profile;
 mod search;
+mod vault;
 #[cfg(windows)]
 mod webview2_guard;
 
 use browser::BrowserState;
+use profile::ProfileStore;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(BrowserState::new())
+        .manage(ProfileStore::new())
         .invoke_handler(tauri::generate_handler![
             browser::create_tab,
             browser::set_active_tab,
@@ -23,8 +27,21 @@ pub fn run() {
             browser::clear_browsing_data,
             browser::discard_inactive_tabs,
             browser::browser_stats,
+            profile::list_bookmarks,
+            profile::add_bookmark,
+            profile::remove_bookmark,
+            profile::record_history,
+            profile::list_history,
+            profile::clear_history,
+            profile::record_download,
+            profile::list_downloads,
+            profile::clear_downloads,
             search::resolve_omnibox_input,
-            search::resolve_search_query
+            search::resolve_search_query,
+            vault::vault_list,
+            vault::vault_save,
+            vault::vault_delete,
+            vault::vault_fill
         ])
         .run(tauri::generate_context!())
         .expect("Ghost Browser runtime failure");

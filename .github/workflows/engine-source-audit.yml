@@ -107,6 +107,9 @@ jobs:
           if ($workflow -match '(?m)^\s*pull_request\s*:') {
             throw 'Heavy full-source Windows build must remain manual/self-hosted and must not run on every PR.'
           }
+          if ($workflow -match '(?i)uninstall\.exe|ghosium(?:-browser)?-uninstall\.exe') {
+            throw 'Full-source workflow must not build, copy, upload or release a standalone uninstall executable.'
+          }
 
       - name: Validate deterministic brand asset generator
         shell: bash
@@ -191,6 +194,10 @@ jobs:
           /chrome/app/theme/chromium/
           /chrome/common/url_constants.h
           /chrome/install_static/chromium_install_modes.h
+          /chrome/installer/setup/setup_main.cc
+          /chrome/installer/setup/uninstall.cc
+          /chrome/installer/setup/install_worker.cc
+          /chrome/installer/util/util_constants.h
           /chrome/browser/ui/chrome_pages.cc
           /chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome_page_handler.cc
           /chrome/browser/ui/webui/extensions/extensions_ui.cc
@@ -231,6 +238,18 @@ jobs:
           grep -F '.base_app_name = L"Ghosium Browser"' "$CHROMIUM_SRC/chrome/install_static/chromium_install_modes.h"
           grep -F '.browser_prog_id_prefix = L"GhosiumHTM"' "$CHROMIUM_SRC/chrome/install_static/chromium_install_modes.h"
           grep -F '.direct_launch_url_scheme = "ghosium"' "$CHROMIUM_SRC/chrome/install_static/chromium_install_modes.h"
+
+          # Ghosium is uninstallable through the normal installed setup.exe flow.
+          # No separate uninstall.exe is introduced or expected.
+          grep -F 'kSetupExe[] = L"setup.exe"' "$CHROMIUM_SRC/chrome/installer/util/util_constants.h"
+          grep -F 'kUninstallStringField[] = L"UninstallString"' "$CHROMIUM_SRC/chrome/installer/util/util_constants.h"
+          grep -F 'kUninstallArgumentsField[] = L"UninstallArguments"' "$CHROMIUM_SRC/chrome/installer/util/util_constants.h"
+          grep -F 'HasSwitch(installer::switches::kUninstall)' "$CHROMIUM_SRC/chrome/installer/setup/setup_main.cc"
+          grep -F 'UninstallProduct(' "$CHROMIUM_SRC/chrome/installer/setup/setup_main.cc"
+          grep -F 'InstallStatus UninstallProduct(' "$CHROMIUM_SRC/chrome/installer/setup/uninstall.cc"
+          grep -F 'installer::kUninstallStringField' "$CHROMIUM_SRC/chrome/installer/setup/install_worker.cc"
+          grep -F 'installer::kUninstallArgumentsField' "$CHROMIUM_SRC/chrome/installer/setup/install_worker.cc"
+
           if git -C "$CHROMIUM_SRC" status --porcelain=v1 -- third_party | grep -q .; then
             echo "third_party was modified" >&2
             exit 1

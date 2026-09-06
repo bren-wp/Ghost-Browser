@@ -19,6 +19,11 @@ const MAX_MAIL_ACCOUNTS: usize = 20;
 const MAX_TEXT: usize = 2_048;
 const MAX_URL: usize = 8_192;
 
+// Serializes filesystem operations even if more than one ProfileStore is ever
+// created in-process. The application normally owns one managed store, but this
+// also prevents temp/backup rename races in tests and defensive recovery paths.
+static PROFILE_IO_LOCK: Mutex<()> = Mutex::new(());
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Bookmark {
@@ -150,6 +155,7 @@ pub fn normalize_origin(input: &str) -> Result<String, String> {
 }
 
 fn write_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
+    let _io_guard = PROFILE_IO_LOCK.lock();
     let parent = path.parent().ok_or("Putanja profila nije valjana")?;
     fs::create_dir_all(parent).map_err(|error| error.to_string())?;
 
@@ -183,7 +189,7 @@ fn parse_profile(bytes: &[u8]) -> Option<ProfileData> {
     Some(data)
 }
 
-fn restore_backup(path: &Path) -> Option<ProfileData> {
+fn restore_backup_unlocked(path: &Path) -> Option<ProfileData> {
     let backup = path.with_extension("json.bak");
     let bytes = fs::read(&backup).ok()?;
     let data = parse_profile(&bytes)?;
@@ -198,6 +204,7 @@ fn restore_backup(path: &Path) -> Option<ProfileData> {
 }
 
 fn load_profile(path: &Path) -> ProfileData {
+    let _io_guard = PROFILE_IO_LOCK.lock();
     match fs::read(path) {
         Ok(bytes) => {
             if let Some(data) = parse_profile(&bytes) {
@@ -210,17 +217,25 @@ fn load_profile(path: &Path) -> ProfileData {
         Err(_) => {}
     }
 
-    restore_backup(path).unwrap_or_default()
+    restore_backup_unlocked(path).unwrap_or_default()
 }
 
 impl ProfileStore {
     pub fn new() -> Self {
-        let path = profile_path();
+        Self::from_path(profile_path())
+    }
+
+    fn from_path(path: PathBuf) -> Self {
         let data = load_profile(&path);
         Self {
             path,
             data: Mutex::new(data),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_for_test(path: PathBuf) -> Self {
+        Self::from_path(path)
     }
 
     fn persist_locked(&self, data: &ProfileData) -> Result<(), String> {

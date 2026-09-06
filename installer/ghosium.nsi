@@ -1,5 +1,6 @@
 Unicode true
 !include "MUI2.nsh"
+!include "FileFunc.nsh"
 
 !ifndef GHOSIUM_VERSION
   !define GHOSIUM_VERSION "0.0.0"
@@ -14,6 +15,7 @@ Unicode true
 !define PRODUCT_NAME "Ghosium Browser"
 !define PRODUCT_PUBLISHER "Brendigo"
 !define PRODUCT_EXE "Ghosium-Browser.exe"
+!define INSTALLED_SETUP "Installer\Ghosium-Browser-Setup.exe"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\GhosiumBrowser"
 
 Name "${PRODUCT_NAME} ${GHOSIUM_VERSION}"
@@ -23,7 +25,6 @@ InstallDirRegKey HKCU "${UNINSTALL_KEY}" "InstallLocation"
 RequestExecutionLevel user
 SetCompressor zlib
 ShowInstDetails show
-ShowUninstDetails show
 
 VIProductVersion "${GHOSIUM_VERSION}.0"
 VIAddVersionKey /LANG=1033 "ProductName" "Ghosium Browser"
@@ -35,7 +36,6 @@ VIAddVersionKey /LANG=1033 "LegalCopyright" "Copyright (c) 2026 Brendigo"
 
 !define MUI_ABORTWARNING
 !define MUI_ICON "${NSISDIR}\Contrib\Graphics\Icons\modern-install.ico"
-!define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
 !define MUI_WELCOMEPAGE_TITLE "Ghosium Browser ${GHOSIUM_VERSION}"
 !define MUI_WELCOMEPAGE_TEXT "Welcome to Ghosium Browser.$\r$\n$\r$\nChoose your language, review the Brendigo license, and install Ghosium Browser for your Windows account."
 !define MUI_FINISHPAGE_LINK "Ghosium Support"
@@ -52,9 +52,6 @@ VIAddVersionKey /LANG=1033 "LegalCopyright" "Copyright (c) 2026 Brendigo"
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
-
-!insertmacro MUI_UNPAGE_CONFIRM
-!insertmacro MUI_UNPAGE_INSTFILES
 
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "Croatian"
@@ -118,7 +115,44 @@ LangString GhosiumLocale ${LANG_TRADCHINESE} "zh-TW"
 LangString GhosiumLocale ${LANG_ARABIC} "ar"
 LangString GhosiumLocale ${LANG_HEBREW} "he"
 
+Function RemoveGhosium
+  SetShellVarContext current
+
+  ReadRegStr $R2 HKCU "${UNINSTALL_KEY}" "InstallLocation"
+  StrCmp $R2 "" 0 +2
+    StrCpy $R2 "$LOCALAPPDATA\Programs\Ghosium Browser"
+  StrCpy $INSTDIR $R2
+
+  IfSilent remove_now
+  MessageBox MB_ICONQUESTION|MB_YESNO "Remove Ghosium Browser from this Windows account?" IDYES remove_now
+  Abort
+
+remove_now:
+  ; Stop the launcher/engine so Windows can remove the installation directory.
+  nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /IM "Ghosium-Browser.exe" /T /F'
+  nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /IM "Ghosium-Engine.exe" /T /F'
+
+  Delete "$DESKTOP\Ghosium Browser.lnk"
+  RMDir /r "$SMPROGRAMS\Ghosium Browser"
+  DeleteRegKey HKCU "${UNINSTALL_KEY}"
+  DeleteRegKey HKCU "Software\Brendigo\Ghosium Browser"
+
+  ; This setup executable is also the registered uninstaller. It cannot delete
+  ; its own file while running, so schedule removal of the install directory
+  ; after this process exits. No standalone uninstall executable is generated.
+  ExecShell "open" "$SYSDIR\cmd.exe" '/D /C "timeout /T 2 /NOBREAK >NUL & rmdir /S /Q $\"$INSTDIR$\""' SW_HIDE
+FunctionEnd
+
 Function .onInit
+  ${GetParameters} $R0
+  ClearErrors
+  ${GetOptions} $R0 "/UNINSTALL" $R1
+  IfErrors normal_install
+
+  Call RemoveGhosium
+  Quit
+
+normal_install:
   StrCpy $LANGUAGE ${LANG_ENGLISH}
   !insertmacro MUI_LANGDLL_DISPLAY
 FunctionEnd
@@ -133,7 +167,13 @@ Section "Ghosium Browser" SecMain
   FileWrite $0 "$(GhosiumLocale)$\r$\n"
   FileClose $0
 
-  WriteUninstaller "$INSTDIR\Uninstall.exe"
+  ; Keep a copy of the same installer inside the installation. Windows invokes
+  ; this exact setup executable with /UNINSTALL from Installed apps. This avoids
+  ; creating a second Uninstall.exe while retaining a normal uninstall path.
+  CreateDirectory "$INSTDIR\Installer"
+  StrCmp "$EXEPATH" "$INSTDIR\${INSTALLED_SETUP}" setup_ready
+  CopyFiles /SILENT "$EXEPATH" "$INSTDIR\${INSTALLED_SETUP}"
+setup_ready:
 
   CreateDirectory "$SMPROGRAMS\Ghosium Browser"
   CreateShortcut "$SMPROGRAMS\Ghosium Browser\Ghosium Browser.lnk" "$INSTDIR\${PRODUCT_EXE}"
@@ -153,19 +193,12 @@ Section "Ghosium Browser" SecMain
   WriteRegStr HKCU "${UNINSTALL_KEY}" "Publisher" "${PRODUCT_PUBLISHER}"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon" "$INSTDIR\${PRODUCT_EXE}"
-  WriteRegStr HKCU "${UNINSTALL_KEY}" "UninstallString" '$\"$INSTDIR\Uninstall.exe$\"'
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "UninstallString" '$\"$INSTDIR\${INSTALLED_SETUP}$\" /UNINSTALL'
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "QuietUninstallString" '$\"$INSTDIR\${INSTALLED_SETUP}$\" /UNINSTALL /S'
   WriteRegStr HKCU "${UNINSTALL_KEY}" "URLInfoAbout" "https://ghosium.com/"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "HelpLink" "https://ghosium.com/support"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "URLUpdateInfo" "https://ghosium.com/security"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "InstallLanguage" "$(GhosiumLocale)"
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoRepair" 1
-SectionEnd
-
-Section "Uninstall"
-  SetShellVarContext current
-  Delete "$DESKTOP\Ghosium Browser.lnk"
-  RMDir /r "$SMPROGRAMS\Ghosium Browser"
-  DeleteRegKey HKCU "${UNINSTALL_KEY}"
-  RMDir /r "$INSTDIR"
 SectionEnd

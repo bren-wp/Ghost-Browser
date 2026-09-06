@@ -31,7 +31,7 @@ pub fn run() {
             browser::go_back,
             browser::go_forward,
             browser::sync_viewport,
-            cleanup::clear_browsing_data,
+            cleanup::clear_all_browsing_data,
             browser::discard_inactive_tabs,
             browser::browser_stats,
             profile::list_bookmarks,

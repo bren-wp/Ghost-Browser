@@ -2,6 +2,7 @@
 #include <shellapi.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <cwctype>
 #include <filesystem>
 #include <string>
@@ -14,6 +15,9 @@ namespace {
 
 constexpr wchar_t kProductName[] = L"Ghosium Browser";
 constexpr wchar_t kSelfTestSwitch[] = L"--ghosium-self-test";
+constexpr wchar_t kLowMemorySwitch[] = L"--ghosium-low-memory";
+constexpr wchar_t kBalancedSwitch[] = L"--ghosium-balanced";
+constexpr std::uint64_t kLowMemoryThresholdBytes = 8ULL * 1024ULL * 1024ULL * 1024ULL;
 
 std::wstring ToLower(std::wstring value) {
   std::transform(value.begin(), value.end(), value.begin(), [](wchar_t ch) {
@@ -79,6 +83,15 @@ fs::path LocalProfileDirectory() {
   return fs::path(buffer) / kProductName / L"User Data";
 }
 
+std::uint64_t TotalPhysicalMemory() {
+  MEMORYSTATUSEX status{};
+  status.dwLength = sizeof(status);
+  if (!GlobalMemoryStatusEx(&status)) {
+    return 0;
+  }
+  return static_cast<std::uint64_t>(status.ullTotalPhys);
+}
+
 void ShowError(const std::wstring& message) {
   MessageBoxW(nullptr, message.c_str(), kProductName, MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
 }
@@ -89,26 +102,41 @@ bool CoreFilesExist(const fs::path& root) {
          fs::is_regular_file(root / L"extension" / L"manifest.json", error) &&
          fs::is_regular_file(root / L"extension" / L"rules.json", error) &&
          fs::is_regular_file(root / L"extension" / L"newtab.html", error) &&
-         fs::is_regular_file(root / L"extension" / L"newtab.css", error);
+         fs::is_regular_file(root / L"extension" / L"newtab.css", error) &&
+         fs::is_regular_file(root / L"search-provider" / L"manifest.json", error);
+}
+
+bool IsInternalSwitch(const std::wstring& argument) {
+  const std::wstring lowered = ToLower(argument);
+  return lowered == kSelfTestSwitch || lowered == kLowMemorySwitch || lowered == kBalancedSwitch;
 }
 
 bool IsProtectedArgument(const std::wstring& argument, bool* consumes_next) {
   *consumes_next = false;
   const std::wstring lowered = ToLower(argument);
 
-  if (lowered == L"--user-data-dir" || lowered == L"--load-extension") {
-    *consumes_next = true;
-    return true;
-  }
-
-  if (StartsWithInsensitive(lowered, L"--user-data-dir=") ||
-      StartsWithInsensitive(lowered, L"--load-extension=")) {
-    return true;
+  const std::vector<std::wstring> valued = {
+      L"--user-data-dir", L"--load-extension", L"--disable-extensions-except",
+      L"--remote-debugging-port"};
+  for (const auto& option : valued) {
+    if (lowered == option) {
+      *consumes_next = true;
+      return true;
+    }
+    if (StartsWithInsensitive(lowered, option + L"=")) {
+      return true;
+    }
   }
 
   return lowered == L"--enable-crash-reporter" ||
          lowered == L"--enable-sync" ||
-         lowered == L"--ghosium-self-test";
+         lowered == L"--disable-extensions" ||
+         lowered == L"--no-sandbox" ||
+         lowered == L"--disable-web-security" ||
+         lowered == L"--ignore-certificate-errors" ||
+         lowered == L"--allow-running-insecure-content" ||
+         lowered == L"--remote-debugging-pipe" ||
+         IsInternalSwitch(lowered);
 }
 
 void ApplyLauncherMitigations() {
@@ -138,16 +166,25 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     return 3;
   }
 
+  bool force_low_memory = false;
+  bool force_balanced = false;
   for (int index = 1; index < argc; ++index) {
-    if (ToLower(argv[index]) == kSelfTestSwitch) {
+    const std::wstring lowered = ToLower(argv[index]);
+    if (lowered == kSelfTestSwitch) {
       LocalFree(argv);
       return 0;
+    }
+    if (lowered == kLowMemorySwitch) {
+      force_low_memory = true;
+    } else if (lowered == kBalancedSwitch) {
+      force_balanced = true;
     }
   }
 
   const fs::path runtime_directory = root / L"runtime";
   const fs::path chromium_executable = runtime_directory / L"chrome.exe";
-  const fs::path extension_directory = root / L"extension";
+  const fs::path privacy_extension = root / L"extension";
+  const fs::path search_extension = root / L"search-provider";
   fs::path profile_directory = LocalProfileDirectory();
   if (profile_directory.empty()) {
     profile_directory = root / L"profile";
@@ -161,16 +198,26 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     return 4;
   }
 
+  const std::uint64_t memory_bytes = TotalPhysicalMemory();
+  const bool low_memory = force_low_memory ||
+                          (!force_balanced && memory_bytes != 0 && memory_bytes <= kLowMemoryThresholdBytes);
+
   std::vector<std::wstring> arguments;
   arguments.emplace_back(chromium_executable.wstring());
   arguments.emplace_back(L"--user-data-dir=" + profile_directory.wstring());
-  arguments.emplace_back(L"--load-extension=" + extension_directory.wstring());
+  arguments.emplace_back(L"--load-extension=" + privacy_extension.wstring() + L"," + search_extension.wstring());
   arguments.emplace_back(L"--disable-sync");
   arguments.emplace_back(L"--disable-breakpad");
   arguments.emplace_back(L"--disable-background-mode");
+  arguments.emplace_back(L"--disable-domain-reliability");
   arguments.emplace_back(L"--no-pings");
   arguments.emplace_back(L"--no-first-run");
   arguments.emplace_back(L"--no-default-browser-check");
+
+  if (low_memory) {
+    arguments.emplace_back(L"--renderer-process-limit=6");
+    arguments.emplace_back(L"--disk-cache-size=134217728");
+  }
 
   for (int index = 1; index < argc; ++index) {
     bool consumes_next = false;

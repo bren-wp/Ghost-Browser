@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Ghosium Search",
+  "version": "0.6.0",
+  "description": "Postavlja Ghosium Search kao zadanu pretragu za Ghosium Browser.",
+  "chrome_settings_overrides": {
+    "search_provider": {
+      "name": "Ghosium Search",
+      "keyword": "search.ghosium.com",
+      "favicon_url": "https://search.ghosium.com/favicon.svg",
+      "search_url": "https://search.ghosium.com/?q={searchTerms}",
+      "suggest_url": "https://search.ghosium.com/api/suggest.php?q={searchTerms}",
+      "encoding": "UTF-8",
+      "is_default": true
+    }
+  }
+}

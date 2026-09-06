@@ -4,6 +4,12 @@ Unicode true
 !ifndef GHOSIUM_VERSION
   !define GHOSIUM_VERSION "0.0.0"
 !endif
+!ifndef GHOSIUM_STAGE
+  !error "GHOSIUM_STAGE must point to the assembled release directory"
+!endif
+!ifndef GHOSIUM_ARTIFACTS
+  !error "GHOSIUM_ARTIFACTS must point to the release artifact directory"
+!endif
 
 !define PRODUCT_NAME "Ghosium Browser"
 !define PRODUCT_PUBLISHER "Brendigo"
@@ -11,7 +17,7 @@ Unicode true
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\GhosiumBrowser"
 
 Name "${PRODUCT_NAME} ${GHOSIUM_VERSION}"
-OutFile "${__FILEDIR__}\..\artifacts\Ghosium-Browser-Setup-v${GHOSIUM_VERSION}.exe"
+OutFile "${GHOSIUM_ARTIFACTS}\Ghosium-Browser-Setup-v${GHOSIUM_VERSION}.exe"
 InstallDir "$LOCALAPPDATA\Programs\Ghosium Browser"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
@@ -36,7 +42,7 @@ ShowUninstDetails show
 Section "Ghosium Browser" SecMain
   SetShellVarContext current
   SetOutPath "$INSTDIR"
-  File /r "${__FILEDIR__}\..\staging\*"
+  File /r "${GHOSIUM_STAGE}\*"
 
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 

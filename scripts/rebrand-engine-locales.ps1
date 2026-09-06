@@ -102,4 +102,9 @@ if ($thirdPartyChanges) {
   throw 'Locale branding modified third_party sources; refusing to continue.'
 }
 
-Write-Host 'Ghosium supported locale branding applied.'
+& (Join-Path $PSScriptRoot 'verify-engine-locales.ps1') -SourceRoot $sourceRootResolved
+if ($LASTEXITCODE -ne 0) {
+  throw 'Ghosium supported locale verification failed.'
+}
+
+Write-Host 'Ghosium supported locale branding applied and verified.'

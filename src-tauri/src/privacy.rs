@@ -37,6 +37,36 @@ pub const DOCUMENT_START_SCRIPT: &str = r#"
 (() => {
   'use strict';
 
+  const deny = () => Promise.reject(
+    new DOMException('Blocked by Ghosium Browser privacy policy', 'NotAllowedError')
+  );
+
+  try {
+    Object.defineProperty(Navigator.prototype, 'doNotTrack', {
+      get: () => '1',
+      configurable: false
+    });
+  } catch (_) {}
+
+  try {
+    Object.defineProperty(Navigator.prototype, 'globalPrivacyControl', {
+      get: () => true,
+      configurable: false
+    });
+  } catch (_) {}
+
+  try {
+    if ('bluetooth' in navigator && navigator.bluetooth) {
+      Object.defineProperty(navigator.bluetooth, 'requestDevice', { value: deny, configurable: false });
+    }
+  } catch (_) {}
+
+  try {
+    if ('usb' in navigator && navigator.usb) {
+      Object.defineProperty(navigator.usb, 'requestDevice', { value: deny, configurable: false });
+    }
+  } catch (_) {}
+
   try {
     if ('serial' in navigator && navigator.serial) {
       Object.defineProperty(navigator.serial, 'requestPort', { value: deny, configurable: false });

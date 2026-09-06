@@ -44,8 +44,12 @@ jobs:
             exit 1
           fi
 
-          if grep -nE 'WriteUninstaller|MUI_UNPAGE_|Section[[:space:]]+"Uninstall"|Uninstall\.exe' installer/ghosium.nsi; then
-            echo 'installer/ghosium.nsi must use the setup executable for uninstall instead of generating Uninstall.exe.' >&2
+          # Remove NSIS comment text before checking executable directives. This
+          # allows documentation to explain the forbidden architecture without
+          # treating words in comments as active installer commands.
+          active_nsi="$(sed 's/[[:space:]]*;.*$//' installer/ghosium.nsi)"
+          if printf '%s\n' "$active_nsi" | grep -nE 'WriteUninstaller|MUI_UNPAGE_|Section[[:space:]]+"Uninstall"|Uninstall\.exe'; then
+            echo 'installer/ghosium.nsi must use the setup executable for uninstall instead of generating a standalone uninstaller.' >&2
             exit 1
           fi
 

@@ -106,7 +106,7 @@ app.innerHTML = `
         <div><strong>Zaštita je uključena</strong><p>Ghost Browser nema vlastitu analitiku, oglase ni korisničke profile.</p></div>
       </div>
       <div class="setting"><div><strong>Reklame i trackeri</strong><span>Blokiranje poznatih mreža za oglašavanje i praćenje</span></div><span class="status-badge">Uključeno</span></div>
-      <div class="setting"><div><strong>WebRTC zaštita</strong><span>Osjetljive mrežne i medijske dozvole blokirane su po zadanom</span></div><span class="status-badge">Uključeno</span></div>
+      <div class="setting"><div><strong>Dozvole web-stranice</strong><span>Kamera, mikrofon i lokacija traže dopuštenje nakon vaše radnje; Ghost odluku ne sprema trajno</span></div><span class="status-badge">Na zahtjev</span></div>
       <div class="setting"><div><strong>Privacy signali</strong><span>Do Not Track i Global Privacy Control</span></div><span class="status-badge">Uključeno</span></div>
       <div class="panel-actions"><button id="clear-data" class="primary-button">Obriši podatke pregledavanja</button></div>
     </aside>
@@ -142,6 +142,8 @@ let tabs: TabSnapshot[] = [];
 let activeTabId: string | null = null;
 let closedTabs: ClosedTab[] = [];
 let toastTimer: number | undefined;
+let memoryRefreshTimer: number | undefined;
+let viewportFrame: number | null = null;
 let overlayOpen = false;
 
 const activeTab = () => tabs.find((tab) => tab.id === activeTabId);
@@ -200,11 +202,23 @@ async function refreshMemoryStatus(): Promise<void> {
   reopenButton.disabled = closedTabs.length === 0;
 }
 
+function scheduleMemoryStatusRefresh(delay = 100): void {
+  if (memoryRefreshTimer !== undefined) window.clearTimeout(memoryRefreshTimer);
+  memoryRefreshTimer = window.setTimeout(() => {
+    memoryRefreshTimer = undefined;
+    void safeAction(refreshMemoryStatus);
+  }, delay);
+}
+
 function refreshChrome(): void {
   const tab = activeTab();
   const hasPage = Boolean(tab?.url);
   newtab.classList.toggle("hidden", Boolean(tab?.hasWebview || tab?.url));
-  omnibox.value = tab?.url ?? "";
+
+  if (document.activeElement !== omnibox) {
+    omnibox.value = tab?.url ?? "";
+  }
+
   blockedCount.textContent = String(tab?.blocked ?? 0);
   connectionIcon.textContent = tab?.url?.startsWith("https://") ? "◆" : tab?.url ? "!" : "◈";
   connectionIcon.classList.toggle("insecure", Boolean(tab?.url && !tab.url.startsWith("https://")));
@@ -212,54 +226,93 @@ function refreshChrome(): void {
   document.querySelector<HTMLButtonElement>("#forward")!.disabled = !hasPage;
   document.querySelector<HTMLButtonElement>("#reload")!.disabled = !hasPage;
   renderTabs();
-  void safeAction(refreshMemoryStatus);
 }
 
 async function setOverlay(open: boolean): Promise<void> {
   if (overlayOpen === open) return;
-  overlayOpen = open;
   await invoke("set_overlay_open", { open });
+  overlayOpen = open;
 }
 
 async function closeOverlays(): Promise<void> {
+  await setOverlay(false);
   privacyPanel.classList.remove("open");
   privacyPanel.setAttribute("aria-hidden", "true");
   appMenu.classList.remove("open");
   appMenu.setAttribute("aria-hidden", "true");
   menuButton.setAttribute("aria-expanded", "false");
-  await setOverlay(false);
 }
 
 async function openPrivacyPanel(): Promise<void> {
+  await setOverlay(true);
   appMenu.classList.remove("open");
   appMenu.setAttribute("aria-hidden", "true");
   menuButton.setAttribute("aria-expanded", "false");
   privacyPanel.classList.add("open");
   privacyPanel.setAttribute("aria-hidden", "false");
-  await setOverlay(true);
 }
 
 async function toggleMenu(): Promise<void> {
   const opening = !appMenu.classList.contains("open");
+  await setOverlay(opening);
   privacyPanel.classList.remove("open");
   privacyPanel.setAttribute("aria-hidden", "true");
   appMenu.classList.toggle("open", opening);
   appMenu.setAttribute("aria-hidden", String(!opening));
   menuButton.setAttribute("aria-expanded", String(opening));
   if (opening) await refreshMemoryStatus();
-  await setOverlay(opening);
 }
 
 async function createTab(makeActive = true): Promise<TabSnapshot> {
   const tab = await invoke<TabSnapshot>("create_tab");
   tabs.push(tab);
+
   if (makeActive) {
-    activeTabId = tab.id;
-    await invoke("set_active_tab", { tabId: tab.id });
+    try {
+      await invoke("set_active_tab", { tabId: tab.id });
+      activeTabId = tab.id;
+    } catch (error) {
+      tabs = tabs.filter((item) => item.id !== tab.id);
+      await invoke("close_tab", { tabId: tab.id }).catch(() => undefined);
+      throw error;
+    }
   }
+
   refreshChrome();
-  window.setTimeout(() => omnibox.focus(), 0);
+  scheduleMemoryStatusRefresh();
+  if (makeActive) window.setTimeout(() => omnibox.focus(), 0);
   return tab;
+}
+
+async function activateTab(tabId: string): Promise<void> {
+  if (!tabs.some((tab) => tab.id === tabId)) return;
+  await closeOverlays();
+  await invoke("set_active_tab", { tabId });
+  activeTabId = tabId;
+
+  const tab = activeTab();
+  if (tab?.url) {
+    tab.hasWebview = true;
+    tab.discarded = false;
+  }
+
+  refreshChrome();
+  scheduleMemoryStatusRefresh();
+}
+
+async function cycleTab(direction: 1 | -1): Promise<void> {
+  if (tabs.length < 2) return;
+  const current = Math.max(0, tabs.findIndex((tab) => tab.id === activeTabId));
+  const next = (current + direction + tabs.length) % tabs.length;
+  const target = tabs[next];
+  if (target) await activateTab(target.id);
+}
+
+async function activateNumberedTab(number: number): Promise<void> {
+  if (tabs.length === 0) return;
+  const index = number === 9 ? tabs.length - 1 : number - 1;
+  const target = tabs[index];
+  if (target) await activateTab(target.id);
 }
 
 function normalizeInput(raw: string): { type: "url" | "search"; value: string } {
@@ -285,8 +338,32 @@ async function resolveTarget(raw: string): Promise<string> {
 
 async function navigateTab(tabId: string, raw: string): Promise<void> {
   const target = await resolveTarget(raw);
+  const tab = tabs.find((item) => item.id === tabId);
+  const previous = tab
+    ? { url: tab.url, loading: tab.loading, hasWebview: tab.hasWebview, discarded: tab.discarded }
+    : null;
+
   omnibox.blur();
-  await invoke("navigate_tab", { tabId, target });
+  if (tab) {
+    tab.url = target;
+    tab.loading = true;
+    tab.discarded = false;
+    refreshChrome();
+  }
+
+  try {
+    await invoke("navigate_tab", { tabId, target });
+    if (tab) tab.hasWebview = true;
+  } catch (error) {
+    if (tab && previous) {
+      tab.url = previous.url;
+      tab.loading = previous.loading;
+      tab.hasWebview = previous.hasWebview;
+      tab.discarded = previous.discarded;
+      refreshChrome();
+    }
+    throw error;
+  }
 }
 
 async function navigateRaw(raw: string): Promise<void> {
@@ -300,18 +377,25 @@ async function closeTab(id: string): Promise<void> {
   if (index < 0) return;
   const closing = tabs[index];
   if (!closing) return;
-  closedTabs.push({ title: closing.title, url: closing.url });
-  if (closedTabs.length > MAX_CLOSED_TABS) closedTabs.shift();
 
   await invoke("close_tab", { tabId: id });
+  closedTabs.push({ title: closing.title, url: closing.url });
+  if (closedTabs.length > MAX_CLOSED_TABS) closedTabs.shift();
   tabs.splice(index, 1);
+
   if (activeTabId === id) {
     const next = tabs[Math.min(index, tabs.length - 1)];
-    activeTabId = next?.id ?? null;
-    if (next) await invoke("set_active_tab", { tabId: next.id });
+    if (next) {
+      await invoke("set_active_tab", { tabId: next.id });
+      activeTabId = next.id;
+    } else {
+      activeTabId = null;
+    }
   }
+
   if (tabs.length === 0) await createTab(true);
   refreshChrome();
+  scheduleMemoryStatusRefresh();
 }
 
 async function reopenClosedTab(): Promise<void> {
@@ -319,7 +403,7 @@ async function reopenClosedTab(): Promise<void> {
   if (!closed) return;
   const tab = await createTab(true);
   if (closed.url) await navigateTab(tab.id, closed.url);
-  await refreshMemoryStatus();
+  scheduleMemoryStatusRefresh();
 }
 
 async function clearBrowsingData(): Promise<void> {
@@ -332,7 +416,9 @@ async function clearBrowsingData(): Promise<void> {
 async function freeInactiveMemory(): Promise<void> {
   const discarded = await invoke<number>("discard_inactive_tabs");
   await refreshMemoryStatus();
-  showToast(discarded > 0 ? `Oslobođena je memorija ${discarded} neaktivnih tabova.` : "Nema neaktivnih tabova za oslobađanje.");
+  showToast(discarded > 0
+    ? `Oslobođena je memorija ${discarded} neaktivnih tabova.`
+    : "Nema neaktivnih tabova za oslobađanje.");
 }
 
 async function syncViewport(): Promise<void> {
@@ -346,14 +432,31 @@ async function syncViewport(): Promise<void> {
   });
 }
 
-document.querySelector("#new-tab")!.addEventListener("click", () => void safeAction(async () => { await closeOverlays(); await createTab(true); }));
+function scheduleViewportSync(): void {
+  if (viewportFrame !== null) return;
+  viewportFrame = window.requestAnimationFrame(() => {
+    viewportFrame = null;
+    void safeAction(syncViewport);
+  });
+}
+
+document.querySelector("#new-tab")!.addEventListener("click", () => void safeAction(async () => {
+  await closeOverlays();
+  await createTab(true);
+}));
+
 document.querySelector<HTMLFormElement>("#omnibox-form")!.addEventListener("submit", (event) => {
   event.preventDefault();
   void safeAction(() => navigateRaw(omnibox.value));
 });
+
 document.querySelector<HTMLFormElement>("#newtab-search")!.addEventListener("submit", (event) => {
   event.preventDefault();
-  void safeAction(() => navigateRaw(newtabInput.value));
+  const value = newtabInput.value;
+  void safeAction(async () => {
+    await navigateRaw(value);
+    newtabInput.value = "";
+  });
 });
 
 tabsEl.addEventListener("click", (event) => {
@@ -365,33 +468,63 @@ tabsEl.addEventListener("click", (event) => {
       await closeTab(close.dataset.closeTab!);
       return;
     }
+
     const tabButton = target.closest<HTMLButtonElement>("[data-tab]");
-    if (!tabButton) return;
-    await closeOverlays();
-    activeTabId = tabButton.dataset.tab!;
-    await invoke("set_active_tab", { tabId: activeTabId });
-    const tab = activeTab();
-    if (tab) {
-      tab.hasWebview = Boolean(tab.url);
-      tab.discarded = false;
-    }
-    refreshChrome();
+    if (tabButton?.dataset.tab) await activateTab(tabButton.dataset.tab);
   });
 });
 
-document.querySelector("#back")!.addEventListener("click", () => activeTabId && void safeAction(() => invoke("go_back", { tabId: activeTabId! })));
-document.querySelector("#forward")!.addEventListener("click", () => activeTabId && void safeAction(() => invoke("go_forward", { tabId: activeTabId! })));
-document.querySelector("#reload")!.addEventListener("click", () => activeTabId && void safeAction(() => invoke("reload_tab", { tabId: activeTabId! })));
+tabsEl.addEventListener("auxclick", (event) => {
+  if (event.button !== 1) return;
+  const target = event.target as HTMLElement;
+  const tabButton = target.closest<HTMLButtonElement>("[data-tab]");
+  if (!tabButton?.dataset.tab) return;
+  event.preventDefault();
+  void safeAction(() => closeTab(tabButton.dataset.tab!));
+});
+
+tabsEl.addEventListener("wheel", (event) => {
+  if (tabsEl.scrollWidth <= tabsEl.clientWidth) return;
+  if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+  tabsEl.scrollLeft += event.deltaY;
+  event.preventDefault();
+}, { passive: false });
+
+document.querySelector("#back")!.addEventListener("click", () => {
+  if (activeTabId) void safeAction(() => invoke("go_back", { tabId: activeTabId! }));
+});
+
+document.querySelector("#forward")!.addEventListener("click", () => {
+  if (activeTabId) void safeAction(() => invoke("go_forward", { tabId: activeTabId! }));
+});
+
+document.querySelector("#reload")!.addEventListener("click", () => {
+  if (activeTabId) void safeAction(() => invoke("reload_tab", { tabId: activeTabId! }));
+});
+
 for (const selector of ["#shield", "#privacy"]) {
   document.querySelector(selector)!.addEventListener("click", () => void safeAction(openPrivacyPanel));
 }
+
 document.querySelector("#close-panel")!.addEventListener("click", () => void safeAction(closeOverlays));
 document.querySelector("#clear-data")!.addEventListener("click", () => void safeAction(clearBrowsingData));
 menuButton.addEventListener("click", () => void safeAction(toggleMenu));
-document.querySelector("#menu-new-tab")!.addEventListener("click", () => void safeAction(async () => { await closeOverlays(); await createTab(true); }));
-document.querySelector("#menu-reopen-tab")!.addEventListener("click", () => void safeAction(async () => { await closeOverlays(); await reopenClosedTab(); }));
-document.querySelector("#menu-memory-saver")!.addEventListener("click", () => void safeAction(async () => { await freeInactiveMemory(); await closeOverlays(); }));
-document.querySelector("#menu-clear-data")!.addEventListener("click", () => void safeAction(async () => { await clearBrowsingData(); await closeOverlays(); }));
+document.querySelector("#menu-new-tab")!.addEventListener("click", () => void safeAction(async () => {
+  await closeOverlays();
+  await createTab(true);
+}));
+document.querySelector("#menu-reopen-tab")!.addEventListener("click", () => void safeAction(async () => {
+  await closeOverlays();
+  await reopenClosedTab();
+}));
+document.querySelector("#menu-memory-saver")!.addEventListener("click", () => void safeAction(async () => {
+  await freeInactiveMemory();
+  await closeOverlays();
+}));
+document.querySelector("#menu-clear-data")!.addEventListener("click", () => void safeAction(async () => {
+  await clearBrowsingData();
+  await closeOverlays();
+}));
 
 document.querySelector("#minimize")!.addEventListener("click", () => void appWindow.minimize());
 document.querySelector("#maximize")!.addEventListener("click", () => void appWindow.toggleMaximize());
@@ -405,25 +538,39 @@ document.querySelector<HTMLElement>("#drag-region")!.addEventListener("dblclick"
   void appWindow.toggleMaximize();
 });
 
-window.addEventListener("resize", () => void safeAction(syncViewport));
+window.addEventListener("resize", scheduleViewportSync);
 window.addEventListener("keydown", (event) => {
-  if (event.ctrlKey && event.key.toLowerCase() === "l") {
+  const key = event.key.toLowerCase();
+
+  if (event.ctrlKey && !event.altKey && key === "l") {
     event.preventDefault();
     void safeAction(closeOverlays);
     omnibox.focus();
     omnibox.select();
-  } else if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "t") {
+  } else if (event.ctrlKey && event.shiftKey && key === "t") {
     event.preventDefault();
     void safeAction(reopenClosedTab);
-  } else if (event.ctrlKey && event.key.toLowerCase() === "t") {
+  } else if (event.ctrlKey && !event.shiftKey && key === "t") {
     event.preventDefault();
-    void safeAction(async () => { await closeOverlays(); await createTab(true); });
-  } else if (event.ctrlKey && event.key.toLowerCase() === "w" && activeTabId) {
+    void safeAction(async () => {
+      await closeOverlays();
+      await createTab(true);
+    });
+  } else if (event.ctrlKey && key === "w" && activeTabId) {
     event.preventDefault();
     void safeAction(() => closeTab(activeTabId!));
   } else if (event.ctrlKey && event.shiftKey && event.key === "Delete") {
     event.preventDefault();
     void safeAction(clearBrowsingData);
+  } else if (event.ctrlKey && key === "r" && activeTabId) {
+    event.preventDefault();
+    void safeAction(() => invoke("reload_tab", { tabId: activeTabId! }));
+  } else if (event.ctrlKey && event.key === "Tab") {
+    event.preventDefault();
+    void safeAction(() => cycleTab(event.shiftKey ? -1 : 1));
+  } else if (event.ctrlKey && /^[1-9]$/.test(event.key)) {
+    event.preventDefault();
+    void safeAction(() => activateNumberedTab(Number(event.key)));
   } else if (event.altKey && event.key === "ArrowLeft" && activeTabId) {
     event.preventDefault();
     void safeAction(() => invoke("go_back", { tabId: activeTabId! }));
@@ -442,6 +589,7 @@ await listen<TabEvent>("ghost://tab-event", (event) => {
   const update = event.payload;
   const tab = tabs.find((item) => item.id === update.id);
   if (!tab) return;
+
   if (update.title !== undefined) tab.title = update.title || "Novi tab";
   if (update.url !== undefined) tab.url = update.url;
   if (update.loading !== undefined) tab.loading = update.loading;
@@ -450,16 +598,16 @@ await listen<TabEvent>("ghost://tab-event", (event) => {
     tab.discarded = update.discarded;
     tab.hasWebview = !update.discarded && Boolean(tab.url);
   }
+
   if (tab.id === activeTabId) refreshChrome();
-  else {
-    renderTabs();
-    void safeAction(refreshMemoryStatus);
-  }
+  else renderTabs();
+  scheduleMemoryStatusRefresh();
 });
 
 await listen<PopupNavigation>("ghost://open-current-tab", (event) => {
   const payload = event.payload;
   if (!payload?.tabId || !payload?.url) return;
+  if (!tabs.some((tab) => tab.id === payload.tabId)) return;
   void safeAction(() => navigateTab(payload.tabId, payload.url));
 });
 
@@ -468,4 +616,6 @@ await listen<{ url?: string }>("ghost://download", () => {
 });
 
 await safeAction(syncViewport);
-await safeAction(async () => { await createTab(true); });
+await safeAction(async () => {
+  await createTab(true);
+});

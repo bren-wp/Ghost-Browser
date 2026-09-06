@@ -151,6 +151,11 @@ Replace-RequiredLiteral -Path $urlConstants -OldValue '"https://support.google.c
 Replace-RequiredLiteral -Path $urlConstants -OldValue '"https://support.google.com/chrome?p=help&ctx=menu"' -NewValue '"https://ghosium.com/support"'
 Replace-RequiredLiteral -Path $urlConstants -OldValue '"https://support.google.com/chrome?p=help&ctx=settings"' -NewValue '"https://ghosium.com/support"'
 
+& (Join-Path $PSScriptRoot 'rewrite-engine-product-links.ps1') -SourceRoot $sourceRootResolved
+if ($LASTEXITCODE -ne 0) {
+  throw 'Ghosium first-party product link routing failed.'
+}
+
 # Replace every product icon path used by current-channel-logo, Windows resources,
 # tiles, app shortcuts and product vector icons.
 $brandSvg = Join-Path $repoRoot 'engine/branding/ghosium-mark.svg'
@@ -196,4 +201,4 @@ if ($LASTEXITCODE -ne 0) {
   throw 'Ghosium full-source verification failed after branding.'
 }
 
-Write-Host 'Source-level Ghosium branding, locale strings and product icons applied successfully.'
+Write-Host 'Source-level Ghosium branding, first-party links, locale strings and product icons applied successfully.'

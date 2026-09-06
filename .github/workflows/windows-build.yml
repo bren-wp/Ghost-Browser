@@ -78,7 +78,7 @@ jobs:
     name: Build and verify Windows x64
     needs: verify-web
     runs-on: windows-2025
-    timeout-minutes: 50
+    timeout-minutes: 55
     outputs:
       version: ${{ steps.meta.outputs.version }}
       revision: ${{ steps.meta.outputs.revision }}
@@ -94,107 +94,113 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $ErrorActionPreference = "Stop"
+          $ErrorActionPreference = 'Stop'
 
-          $version = (Get-Content "VERSION" -Raw).Trim()
+          $version = (Get-Content 'VERSION' -Raw).Trim()
           if ($version -notmatch '^\d+\.\d+\.\d+$') {
-            throw "VERSION must be semantic x.y.z"
+            throw 'VERSION must be semantic x.y.z'
           }
 
-          $privacyManifest = Get-Content "extension/manifest.json" -Raw | ConvertFrom-Json
-          $searchManifest = Get-Content "search-provider/manifest.json" -Raw | ConvertFrom-Json
+          $privacyManifest = Get-Content 'extension/manifest.json' -Raw | ConvertFrom-Json
+          $searchManifest = Get-Content 'search-provider/manifest.json' -Raw | ConvertFrom-Json
           foreach ($manifest in @($privacyManifest, $searchManifest)) {
             if ($manifest.version -ne $version) {
               throw "Bundled Ghosium component version $($manifest.version) does not match VERSION $version"
             }
             if ($manifest.manifest_version -ne 3) {
-              throw "Bundled Ghosium components must use Manifest V3"
+              throw 'Bundled Ghosium components must use Manifest V3'
             }
           }
 
-          $searchUrl = $searchManifest.chrome_settings_overrides.search_provider.search_url
-          if ($searchUrl -ne 'https://search.ghosium.com/?q={searchTerms}') {
-            throw "Ghosium Search is not configured as the bundled default search endpoint"
+          if ($searchManifest.chrome_settings_overrides.search_provider.search_url -ne 'https://search.ghosium.com/?q={searchTerms}') {
+            throw 'Ghosium Search is not configured as the bundled default search endpoint'
           }
 
-          foreach ($forbidden in @("src-tauri", "src", "package.json", "package-lock.json", "tsconfig.json", "vite.config.ts")) {
+          foreach ($forbidden in @('src-tauri', 'src', 'package.json', 'package-lock.json', 'tsconfig.json', 'vite.config.ts')) {
             if (Test-Path $forbidden) {
               throw "Legacy application-runtime path remains: $forbidden"
             }
           }
 
-          $browserSources = @(Get-ChildItem -Path "launcher" -Recurse -File -Include *.c,*.cc,*.cpp,*.cxx,*.h,*.hpp,*.rs,*.ts,*.tsx,*.js,*.jsx -ErrorAction SilentlyContinue)
+          $browserSources = @(Get-ChildItem -Path 'launcher' -Recurse -File -Include *.c,*.cc,*.cpp,*.cxx,*.h,*.hpp,*.rs,*.ts,*.tsx,*.js,*.jsx -ErrorAction SilentlyContinue)
           $badSources = @($browserSources | Where-Object { $_.Extension -notin @('.cpp', '.h', '.hpp') })
           if ($badSources.Count -gt 0) {
             throw "Ghosium browser-owned executable code must remain C++ only: $($badSources.FullName -join ', ')"
           }
-          if (Get-ChildItem -Path "extension", "search-provider" -Recurse -File -Include *.js,*.mjs,*.ts,*.tsx -ErrorAction SilentlyContinue) {
-            throw "Bundled Ghosium browser components must remain script-free"
+          if (Get-ChildItem -Path 'extension', 'search-provider' -Recurse -File -Include *.js,*.mjs,*.ts,*.tsx -ErrorAction SilentlyContinue) {
+            throw 'Bundled Ghosium browser components must remain script-free'
           }
 
           foreach ($required in @(
-            "launcher/main.cpp",
-            "extension/manifest.json",
-            "extension/newtab.html",
-            "extension/newtab.css",
-            "extension/rules.json",
-            "extension/ghosium-mark.svg",
-            "search-provider/manifest.json",
-            "search-web/index.php",
-            "store-web/index.php",
-            "installer/ghosium.nsi",
-            "installer/portable.nsi",
-            "LICENSE",
-            "PRIVACY.md",
-            "SECURITY.md",
-            "THIRD_PARTY_NOTICES.md"
+            'launcher/main.cpp',
+            'launcher/ghosium.rc',
+            'ghosium.ico',
+            'scripts/build-native-launcher.ps1',
+            'scripts/smoke-test-windows-installer.ps1',
+            'extension/manifest.json',
+            'extension/newtab.html',
+            'extension/newtab.css',
+            'extension/rules.json',
+            'extension/ghosium-mark.svg',
+            'search-provider/manifest.json',
+            'search-web/index.php',
+            'store-web/index.php',
+            'installer/ghosium.nsi',
+            'installer/portable.nsi',
+            'LICENSE',
+            'PRIVACY.md',
+            'SECURITY.md',
+            'THIRD_PARTY_NOTICES.md'
           )) {
             if (!(Test-Path $required -PathType Leaf)) {
               throw "Required file missing: $required"
             }
           }
 
-          $rules = @(Get-Content "extension/rules.json" -Raw | ConvertFrom-Json)
-          $duplicateIds = @($rules | Group-Object id | Where-Object Count -gt 1)
-          if ($duplicateIds.Count -gt 0) {
-            throw "Duplicate declarative rule IDs found"
+          $icon = [IO.File]::ReadAllBytes((Resolve-Path 'ghosium.ico'))
+          if ($icon.Length -lt 4 -or $icon[0] -ne 0 -or $icon[1] -ne 0 -or $icon[2] -ne 1 -or $icon[3] -ne 0) {
+            throw 'Canonical ghosium.ico has an invalid ICO signature.'
           }
 
-          $newTab = Get-Content "extension/newtab.html" -Raw
+          $rules = @(Get-Content 'extension/rules.json' -Raw | ConvertFrom-Json)
+          if (@($rules | Group-Object id | Where-Object Count -gt 1).Count -gt 0) {
+            throw 'Duplicate declarative rule IDs found'
+          }
+
+          $newTab = Get-Content 'extension/newtab.html' -Raw
           foreach ($requiredUrl in @(
-            "https://search.ghosium.com/",
-            "https://store.ghosium.com/",
-            "https://ghosium.com/",
-            "https://ghosium.com/support",
-            "https://ghosium.com/security",
-            "https://ghosium.com/legal/terms",
-            "https://ghosium.com/legal/privacy-policy",
-            "https://ghosium.com/legal/licenses"
+            'https://search.ghosium.com/',
+            'https://store.ghosium.com/',
+            'https://ghosium.com/',
+            'https://ghosium.com/support',
+            'https://ghosium.com/security',
+            'https://ghosium.com/legal/terms',
+            'https://ghosium.com/legal/privacy-policy',
+            'https://ghosium.com/legal/licenses'
           )) {
             if (!$newTab.Contains($requiredUrl)) {
               throw "New tab is missing required Ghosium URL: $requiredUrl"
             }
           }
           if ($newTab -match '(?i)chromium|duckduckgo|support\.google|chrome\.google') {
-            throw "Third-party browser branding remains in the Ghosium new-tab UI"
+            throw 'Third-party browser branding remains in the Ghosium new-tab UI'
           }
 
-          $requestedRevision = (Get-Content "ENGINE_REVISION" -Raw).Trim()
-          if ($requestedRevision -eq "latest") {
-            if ($env:GITHUB_EVENT_NAME -eq "push" -and $env:GITHUB_REF -eq "refs/heads/main") {
-              throw "Production main builds must pin ENGINE_REVISION to a numeric revision"
+          $requestedRevision = (Get-Content 'ENGINE_REVISION' -Raw).Trim()
+          if ($requestedRevision -eq 'latest') {
+            if ($env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF -eq 'refs/heads/main') {
+              throw 'Production main builds must pin ENGINE_REVISION to a numeric revision'
             }
             curl.exe --fail --silent --show-error --location --retry 5 --retry-all-errors `
-              "https://storage.googleapis.com/chromium-browser-snapshots/Win_x64/LAST_CHANGE" `
+              'https://storage.googleapis.com/chromium-browser-snapshots/Win_x64/LAST_CHANGE' `
               --output "$env:RUNNER_TEMP/engine-last-change.txt"
             if ($LASTEXITCODE -ne 0) {
-              throw "Unable to resolve the official upstream engine revision"
+              throw 'Unable to resolve the official upstream engine revision'
             }
             $revision = (Get-Content "$env:RUNNER_TEMP/engine-last-change.txt" -Raw).Trim()
           } else {
             $revision = $requestedRevision
           }
-
           if ($revision -notmatch '^\d+$') {
             throw "Resolved engine revision is invalid: $revision"
           }
@@ -202,7 +208,7 @@ jobs:
           $tag = "v$version"
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           $exists = $LASTEXITCODE -eq 0
-          $publish = ($env:GITHUB_EVENT_NAME -eq "push" -and $env:GITHUB_REF -eq "refs/heads/main" -and -not $exists)
+          $publish = ($env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF -eq 'refs/heads/main' -and -not $exists)
 
           "version=$version" >> $env:GITHUB_OUTPUT
           "revision=$revision" >> $env:GITHUB_OUTPUT
@@ -217,8 +223,8 @@ jobs:
           ENGINE_REVISION: ${{ steps.meta.outputs.revision }}
           GHOSIUM_VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          $ErrorActionPreference = "Stop"
-          New-Item -ItemType Directory -Force -Path "downloads", "staging/runtime", "artifacts", "internal" | Out-Null
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path 'downloads', 'staging/runtime', 'artifacts', 'internal' | Out-Null
 
           function Download-VerifiedFile([string]$Url, [string]$Destination) {
             curl.exe --fail --silent --show-error --location --retry 5 --retry-all-errors $Url --output $Destination
@@ -228,57 +234,53 @@ jobs:
           }
 
           $base = "https://storage.googleapis.com/chromium-browser-snapshots/Win_x64/$env:ENGINE_REVISION"
-          $archive = "downloads/engine-win.zip"
+          $archive = 'downloads/engine-win.zip'
           Download-VerifiedFile "$base/chrome-win.zip" $archive
           $archiveHash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-          Expand-Archive -Path $archive -DestinationPath "downloads/engine" -Force
+          Expand-Archive -Path $archive -DestinationPath 'downloads/engine' -Force
 
-          $sourceDirectory = "downloads/engine/chrome-win"
+          $sourceDirectory = 'downloads/engine/chrome-win'
           if (!(Test-Path "$sourceDirectory/chrome.exe" -PathType Leaf)) {
-            throw "Official upstream engine archive is incomplete"
+            throw 'Official upstream engine archive is incomplete'
           }
-          Copy-Item "$sourceDirectory/*" "staging/runtime" -Recurse -Force
-          Move-Item "staging/runtime/chrome.exe" "staging/runtime/Ghosium-Engine.exe" -Force
+          Copy-Item "$sourceDirectory/*" 'staging/runtime' -Recurse -Force
+          Move-Item 'staging/runtime/chrome.exe' 'staging/runtime/Ghosium-Engine.exe' -Force
 
-          $engineVersion = (Get-Item "staging/runtime/Ghosium-Engine.exe").VersionInfo.ProductVersion.Trim()
+          $engineVersion = (Get-Item 'staging/runtime/Ghosium-Engine.exe').VersionInfo.ProductVersion.Trim()
           if (!$engineVersion) {
-            throw "Unable to read upstream engine product version"
+            throw 'Unable to read upstream engine product version'
           }
 
-          $crrevUrl = "https://crrev.com/$env:ENGINE_REVISION"
-          $effectiveUrl = (& curl.exe --fail --silent --show-error --location --retry 5 --retry-all-errors --output NUL --write-out "%{url_effective}" $crrevUrl).Trim()
+          $effectiveUrl = (& curl.exe --fail --silent --show-error --location --retry 5 --retry-all-errors --output NUL --write-out '%{url_effective}' "https://crrev.com/$env:ENGINE_REVISION").Trim()
           if ($LASTEXITCODE -ne 0) {
-            throw "Unable to resolve upstream source revision"
+            throw 'Unable to resolve upstream source revision'
           }
           $sourceMatch = [regex]::Match($effectiveUrl, '/\+/([0-9a-f]{40})(?:/|$)')
           if (!$sourceMatch.Success) {
-            throw "Unexpected upstream source revision response"
+            throw 'Unexpected upstream source revision response'
           }
           $sourceRevision = $sourceMatch.Groups[1].Value
 
-          $licenseEncoded = "downloads/upstream-license.b64"
-          $licenseUrl = "https://chromium.googlesource.com/chromium/src/+/$sourceRevision/LICENSE?format=TEXT"
-          Download-VerifiedFile $licenseUrl $licenseEncoded
-          $encoded = (Get-Content $licenseEncoded -Raw).Trim()
+          $licenseEncoded = 'downloads/upstream-license.b64'
+          Download-VerifiedFile "https://chromium.googlesource.com/chromium/src/+/$sourceRevision/LICENSE?format=TEXT" $licenseEncoded
           try {
-            [IO.File]::WriteAllBytes((Join-Path $PWD "staging/UPSTREAM-LICENSE.txt"), [Convert]::FromBase64String($encoded))
+            [IO.File]::WriteAllBytes((Join-Path $PWD 'staging/UPSTREAM-LICENSE.txt'), [Convert]::FromBase64String((Get-Content $licenseEncoded -Raw).Trim()))
           } catch {
-            throw "Upstream license response was invalid"
+            throw 'Upstream license response was invalid'
           }
 
-          $buildInfo = [ordered]@{
+          [ordered]@{
             ghosiumVersion = $env:GHOSIUM_VERSION
             engineSnapshotRevision = $env:ENGINE_REVISION
             engineVersion = $engineVersion
             engineSourceRevision = $sourceRevision
             engineArchiveSha256 = $archiveHash
             repositoryCommit = $env:GITHUB_SHA
-            architecture = "windows-x64"
-            searchEndpoint = "https://search.ghosium.com/"
-            storeEndpoint = "https://store.ghosium.com/"
+            architecture = 'windows-x64'
+            searchEndpoint = 'https://search.ghosium.com/'
+            storeEndpoint = 'https://store.ghosium.com/'
             automaticLowMemoryThresholdGiB = 8
-          }
-          $buildInfo | ConvertTo-Json | Set-Content "internal/UPSTREAM-BUILD-INFO.json" -Encoding utf8
+          } | ConvertTo-Json | Set-Content 'internal/UPSTREAM-BUILD-INFO.json' -Encoding utf8
 
           "engine_version=$engineVersion" >> $env:GITHUB_OUTPUT
           "source_revision=$sourceRevision" >> $env:GITHUB_OUTPUT
@@ -288,60 +290,44 @@ jobs:
       - name: Assemble Ghosium files
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Stop"
-          Copy-Item "extension" "staging/extension" -Recurse -Force
-          Copy-Item "search-provider" "staging/search-provider" -Recurse -Force
-          Copy-Item "LICENSE", "PRIVACY.md", "SECURITY.md", "THIRD_PARTY_NOTICES.md" "staging" -Force
+          $ErrorActionPreference = 'Stop'
+          Copy-Item 'extension' 'staging/extension' -Recurse -Force
+          Copy-Item 'search-provider' 'staging/search-provider' -Recurse -Force
+          Copy-Item 'LICENSE', 'PRIVACY.md', 'SECURITY.md', 'THIRD_PARTY_NOTICES.md' 'staging' -Force
 
-      - name: Compile hardened Ghosium launcher
+      - name: Compile branded hardened C++20 launcher
         shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (!(Test-Path $vswhere)) {
-            throw "vswhere.exe was not found"
-          }
-          $vsPath = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
-          if (!$vsPath) {
-            throw "Visual Studio C++ toolchain was not found"
-          }
-          $devCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
-          $compile = "call `"$devCmd`" -arch=x64 -host_arch=x64 && cl.exe /nologo /std:c++20 /O2 /W4 /EHsc /DUNICODE /D_UNICODE /GS /sdl /guard:cf /MT launcher\main.cpp /Fe:staging\Ghosium-Browser.exe /link /SUBSYSTEM:WINDOWS /DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA /GUARD:CF /CETCOMPAT user32.lib shell32.lib"
-          & cmd.exe /d /s /c $compile
-          if ($LASTEXITCODE -ne 0) {
-            throw "Ghosium C++ launcher compilation failed with exit code $LASTEXITCODE"
-          }
-          if (!(Test-Path "staging/Ghosium-Browser.exe" -PathType Leaf)) {
-            throw "Ghosium launcher executable was not produced"
-          }
+        env:
+          GHOSIUM_VERSION: ${{ steps.meta.outputs.version }}
+        run: ./scripts/build-native-launcher.ps1 -Version $env:GHOSIUM_VERSION -OutputPath 'staging/Ghosium-Browser.exe'
 
       - name: Run Ghosium launcher and engine smoke tests
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Stop"
+          $ErrorActionPreference = 'Stop'
 
-          $selfTest = Start-Process -FilePath (Resolve-Path "staging/Ghosium-Browser.exe") -ArgumentList "--ghosium-self-test" -Wait -PassThru
+          $selfTest = Start-Process -FilePath (Resolve-Path 'staging/Ghosium-Browser.exe') -ArgumentList '--ghosium-self-test' -Wait -PassThru
           if ($selfTest.ExitCode -ne 0) {
             throw "Ghosium launcher self-test failed with code $($selfTest.ExitCode)"
           }
 
-          $profile = Join-Path $env:RUNNER_TEMP "ghosium-engine-smoke"
-          $stdout = Join-Path $env:RUNNER_TEMP "ghosium-engine-smoke.stdout.txt"
-          $stderr = Join-Path $env:RUNNER_TEMP "ghosium-engine-smoke.stderr.txt"
+          $profile = Join-Path $env:RUNNER_TEMP 'ghosium-engine-smoke'
+          $stdout = Join-Path $env:RUNNER_TEMP 'ghosium-engine-smoke.stdout.txt'
+          $stderr = Join-Path $env:RUNNER_TEMP 'ghosium-engine-smoke.stderr.txt'
           $engineArgs = @(
-            "--headless=new",
-            "--disable-gpu",
-            "--disable-sync",
-            "--no-pings",
-            "--no-first-run",
+            '--headless=new',
+            '--disable-gpu',
+            '--disable-sync',
+            '--no-pings',
+            '--no-first-run',
             "--user-data-dir=$profile",
-            "--dump-dom",
-            "data:text/html,<html><body>ghosium-runtime-ok</body></html>"
+            '--dump-dom',
+            'data:text/html,<html><body>ghosium-runtime-ok</body></html>'
           )
-          $engine = Start-Process -FilePath (Resolve-Path "staging/runtime/Ghosium-Engine.exe") -ArgumentList $engineArgs -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-          $smokeOutput = if (Test-Path $stdout) { Get-Content $stdout -Raw } else { "" }
-          $smokeError = if (Test-Path $stderr) { Get-Content $stderr -Raw } else { "" }
-          if ($engine.ExitCode -ne 0 -or !$smokeOutput.Contains("ghosium-runtime-ok")) {
+          $engine = Start-Process -FilePath (Resolve-Path 'staging/runtime/Ghosium-Engine.exe') -ArgumentList $engineArgs -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          $smokeOutput = if (Test-Path $stdout) { Get-Content $stdout -Raw } else { '' }
+          $smokeError = if (Test-Path $stderr) { Get-Content $stderr -Raw } else { '' }
+          if ($engine.ExitCode -ne 0 -or !$smokeOutput.Contains('ghosium-runtime-ok')) {
             Write-Host $smokeOutput
             Write-Host $smokeError
             throw "Ghosium engine smoke test failed with code $($engine.ExitCode)"
@@ -353,38 +339,39 @@ jobs:
         env:
           GHOSIUM_VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          $ErrorActionPreference = "Stop"
+          $ErrorActionPreference = 'Stop'
 
           $makensis = Get-Command makensis.exe -ErrorAction SilentlyContinue
           if (!$makensis) {
             choco install nsis --yes --no-progress
             if ($LASTEXITCODE -ne 0) {
-              throw "NSIS installation failed"
+              throw 'NSIS installation failed'
             }
-            $candidate = "C:\Program Files (x86)\NSIS\makensis.exe"
+            $candidate = 'C:\Program Files (x86)\NSIS\makensis.exe'
             if (!(Test-Path $candidate)) {
-              $candidate = "C:\Program Files\NSIS\makensis.exe"
+              $candidate = 'C:\Program Files\NSIS\makensis.exe'
             }
             if (!(Test-Path $candidate)) {
-              throw "NSIS installation did not provide makensis.exe"
+              throw 'NSIS installation did not provide makensis.exe'
             }
             $makensisPath = $candidate
           } else {
             $makensisPath = $makensis.Source
           }
 
-          $stagePath = (Resolve-Path "staging").Path
-          $artifactPath = (Resolve-Path "artifacts").Path
+          $stagePath = (Resolve-Path 'staging').Path
+          $artifactPath = (Resolve-Path 'artifacts').Path
+          $iconPath = (Resolve-Path 'ghosium.ico').Path
 
-          foreach ($script in @("installer/ghosium.nsi", "installer/portable.nsi")) {
-            & $makensisPath "/DGHOSIUM_VERSION=$env:GHOSIUM_VERSION" "/DGHOSIUM_STAGE=$stagePath" "/DGHOSIUM_ARTIFACTS=$artifactPath" $script
+          foreach ($script in @('installer/ghosium.nsi', 'installer/portable.nsi')) {
+            & $makensisPath "/DGHOSIUM_VERSION=$env:GHOSIUM_VERSION" "/DGHOSIUM_STAGE=$stagePath" "/DGHOSIUM_ARTIFACTS=$artifactPath" "/DGHOSIUM_ICON=$iconPath" $script
             if ($LASTEXITCODE -ne 0) {
               throw "NSIS build failed for $script"
             }
           }
 
-          $setup = "artifacts/Ghosium-Browser-Setup.exe"
-          $portable = "artifacts/Ghosium-Browser-Portable.exe"
+          $setup = 'artifacts/Ghosium-Browser-Setup.exe'
+          $portable = 'artifacts/Ghosium-Browser-Portable.exe'
           foreach ($file in @($setup, $portable)) {
             if (!(Test-Path $file -PathType Leaf)) {
               throw "Expected release executable missing: $file"
@@ -392,6 +379,19 @@ jobs:
             if ((Get-Item $file).Length -lt 50MB) {
               throw "Release executable is unexpectedly small: $file"
             }
+          }
+
+          $setupInfo = (Get-Item $setup).VersionInfo
+          if ([string]$setupInfo.ProductName -ne 'Ghosium Browser' -or [string]$setupInfo.CompanyName -ne 'Brendigo') {
+            throw "Setup metadata is not Ghosium/Brendigo: '$($setupInfo.ProductName)' / '$($setupInfo.CompanyName)'"
+          }
+          $portableInfo = (Get-Item $portable).VersionInfo
+          if ([string]$portableInfo.ProductName -ne 'Ghosium Browser Portable' -or [string]$portableInfo.CompanyName -ne 'Brendigo') {
+            throw "Portable metadata is not Ghosium/Brendigo: '$($portableInfo.ProductName)' / '$($portableInfo.CompanyName)'"
+          }
+
+          if (Get-ChildItem 'artifacts', 'staging' -Recurse -File -Filter 'Uninstall.exe' -ErrorAction SilentlyContinue) {
+            throw 'A forbidden standalone Uninstall.exe was generated or staged.'
           }
 
           $hashes = foreach ($file in @($setup, $portable)) {
@@ -402,16 +402,23 @@ jobs:
               bytes = $item.Length
             }
           }
-          $hashes | ConvertTo-Json | Set-Content "internal/RELEASE-HASHES.json" -Encoding utf8
-
+          $hashes | ConvertTo-Json | Set-Content 'internal/RELEASE-HASHES.json' -Encoding utf8
           Write-Host "Setup: $([math]::Round((Get-Item $setup).Length / 1MB, 2)) MB"
           Write-Host "Portable: $([math]::Round((Get-Item $portable).Length / 1MB, 2)) MB"
+
+      - name: Smoke test real install and same-Setup uninstall
+        shell: pwsh
+        env:
+          GHOSIUM_VERSION: ${{ steps.meta.outputs.version }}
+        run: ./scripts/smoke-test-windows-installer.ps1 -SetupPath 'artifacts/Ghosium-Browser-Setup.exe' -Version $env:GHOSIUM_VERSION
 
       - name: Upload verified public release executables
         uses: actions/upload-artifact@v4
         with:
           name: Ghosium-Browser-Windows-x64
-          path: artifacts/*.exe
+          path: |
+            artifacts/Ghosium-Browser-Setup.exe
+            artifacts/Ghosium-Browser-Portable.exe
           if-no-files-found: error
           retention-days: 30
 
@@ -445,7 +452,7 @@ jobs:
             artifacts/Ghosium-Browser-Portable.exe \
             --target "$GITHUB_SHA" \
             --title "Ghosium Browser v$GHOSIUM_VERSION" \
-            --notes $'Stable Ghosium Browser release for Windows x64.\n\n- Ghosium-branded New Tab and Search\n- Ghosium Store integration\n- 30 installer languages with English default and Croatian included\n- privacy-hardened background networking defaults\n- automatic Low Memory mode on systems with 8 GiB RAM or less\n- Brendigo publisher and license shown in Setup\n\nRelease assets intentionally contain only Setup.exe and Portable.exe. GitHub provides the matching source-code archives automatically.' \
+            --notes $'Stable Ghosium Browser release for Windows x64.\n\n- Ghosium-branded New Tab and Search\n- Ghosium Store integration\n- Ghosium icon and Brendigo Windows metadata\n- 30 installer languages with English default and Croatian included\n- same-Setup Windows uninstall support without a standalone uninstall executable\n- privacy-hardened background networking defaults\n- automatic Low Memory mode on systems with 8 GiB RAM or less\n\nRelease assets intentionally contain only Setup.exe and Portable.exe. GitHub provides the matching source-code archives automatically.' \
             --latest \
             --repo "$GITHUB_REPOSITORY"
 

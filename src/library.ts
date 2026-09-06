@@ -30,6 +30,26 @@ interface VaultEntry {
   updatedAt: number;
 }
 
+interface MailAccount {
+  id: string;
+  email: string;
+  displayName: string;
+  imapHost: string;
+  imapPort: number;
+  smtpHost: string;
+  smtpPort: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface MailSummary {
+  uid: number;
+  subject: string;
+  from: string;
+  date: string;
+  seen: boolean;
+}
+
 interface TabEvent {
   id: string;
   title?: string;
@@ -37,20 +57,21 @@ interface TabEvent {
   loading?: boolean;
 }
 
-interface PopupNavigation {
-  tabId: string;
-  url: string;
+interface ActiveTabEvent {
+  id: string;
 }
 
-type Section = "favorites" | "history" | "downloads" | "vault";
+type Section = "favorites" | "history" | "downloads" | "vault" | "mail";
 
 const tabState = new Map<string, { title: string; url: string | null; loading: boolean }>();
 let activeTabId: string | null = null;
 let currentSection: Section = "favorites";
+let selectedMailAccountId: string | null = null;
 let drawer: HTMLElement | null = null;
 let content: HTMLElement | null = null;
 let titleEl: HTMLElement | null = null;
 let initialized = false;
+let libraryToastTimer: number | undefined;
 
 const escapeHtml = (value: string) =>
   value
@@ -59,6 +80,29 @@ const escapeHtml = (value: string) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+
+function errorText(error: unknown): string {
+  if (typeof error === "string" && error.trim()) return error;
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return "Radnja nije uspjela.";
+}
+
+function showMessage(message: string): void {
+  const toast = document.querySelector<HTMLElement>("#toast");
+  if (!toast) return;
+  toast.textContent = message;
+  toast.classList.add("show");
+  if (libraryToastTimer !== undefined) window.clearTimeout(libraryToastTimer);
+  libraryToastTimer = window.setTimeout(() => toast.classList.remove("show"), 3200);
+}
+
+async function safeUi(action: () => Promise<void>): Promise<void> {
+  try {
+    await action();
+  } catch (error) {
+    showMessage(errorText(error));
+  }
+}
 
 function shortHost(url: string): string {
   try {
@@ -107,6 +151,7 @@ async function openDrawer(section: Section): Promise<void> {
     history: "Povijest",
     downloads: "Preuzimanja",
     vault: "Password Vault",
+    mail: "Ghost Mail",
   }[section];
   await setRendererHidden(true);
   drawer.classList.add("open");
@@ -183,7 +228,7 @@ function vaultForm(defaultOrigin = ""): string {
       <label><span>Lozinka</span><input id="vault-password" type="password" required maxlength="2048" autocomplete="new-password" /></label>
       <label><span>Naziv</span><input id="vault-label" type="text" maxlength="2048" placeholder="Opcionalno" /></label>
       <button class="library-primary" type="submit">Sigurno spremi</button>
-      <p class="vault-note">Lozinka se sprema u Windows Credential Manager. Ghost profil sadrži samo metapodatke.</p>
+      <p class="vault-note">Tajna se čuva u Windows Credential Manageru. Ghost profil sadrži samo domenu i korisničko ime.</p>
     </form>`;
 }
 
@@ -217,22 +262,115 @@ async function renderVault(): Promise<void> {
       </article>`).join("")}</div>`;
 }
 
+function mailAccountForm(): string {
+  return `
+    <form class="vault-form mail-account-form" id="mail-account-form" autocomplete="off">
+      <label><span>Naziv računa</span><input id="mail-display-name" type="text" required maxlength="2048" placeholder="Poslovni mail" /></label>
+      <label><span>E-mail</span><input id="mail-email" type="email" required maxlength="2048" autocomplete="off" /></label>
+      <label><span>Lozinka / app password</span><input id="mail-password" type="password" required maxlength="2048" autocomplete="new-password" /></label>
+      <div class="mail-grid">
+        <label><span>IMAP host</span><input id="mail-imap-host" type="text" required maxlength="253" placeholder="imap.example.com" /></label>
+        <label><span>IMAP port</span><input id="mail-imap-port" type="number" required min="1" max="65535" value="993" /></label>
+        <label><span>SMTP host</span><input id="mail-smtp-host" type="text" required maxlength="253" placeholder="smtp.example.com" /></label>
+        <label><span>SMTP port</span><select id="mail-smtp-port"><option value="465">465 · TLS</option><option value="587">587 · STARTTLS</option></select></label>
+      </div>
+      <button class="library-primary" type="submit">Testiraj i spremi račun</button>
+      <p class="vault-note">Ghost prvo provjerava TLS prijavu. Lozinka se zatim sprema u Windows Credential Manager i ne zapisuje se u Ghost profil.</p>
+    </form>`;
+}
+
+function composeForm(account: MailAccount): string {
+  return `
+    <details class="library-create mail-compose">
+      <summary>Nova poruka · ${escapeHtml(account.email)}</summary>
+      <form class="vault-form" id="mail-compose-form" data-account-id="${account.id}" autocomplete="off">
+        <label><span>Primatelj</span><input id="mail-to" type="email" required maxlength="2048" /></label>
+        <label><span>Predmet</span><input id="mail-subject" type="text" required maxlength="998" /></label>
+        <label><span>Poruka</span><textarea id="mail-body" maxlength="1048576" rows="8"></textarea></label>
+        <button class="library-primary" type="submit">Pošalji preko TLS-a</button>
+      </form>
+    </details>`;
+}
+
+async function renderInbox(account: MailAccount): Promise<string> {
+  const messages = await invoke<MailSummary[]>("mail_fetch_inbox", { id: account.id, limit: 40 });
+  if (messages.length === 0) {
+    return `<div class="library-empty compact">INBOX je prazan.</div>`;
+  }
+
+  return `<div class="mail-inbox">${messages.map((message) => `
+    <article class="mail-message ${message.seen ? "seen" : "unseen"}">
+      <div class="mail-message-heading">
+        <strong>${escapeHtml(message.subject || "(bez predmeta)")}</strong>
+        <span>${message.seen ? "Pročitano" : "Novo"}</span>
+      </div>
+      <div>${escapeHtml(message.from || "Nepoznat pošiljatelj")}</div>
+      <small>${escapeHtml(message.date || `UID ${message.uid}`)}</small>
+    </article>`).join("")}</div>`;
+}
+
+async function renderMail(loadInbox = false): Promise<void> {
+  if (!content) return;
+  const accounts = await invoke<MailAccount[]>("mail_list_accounts");
+  if (selectedMailAccountId && !accounts.some((item) => item.id === selectedMailAccountId)) {
+    selectedMailAccountId = null;
+  }
+  if (!selectedMailAccountId && accounts.length > 0) selectedMailAccountId = accounts[0]?.id ?? null;
+  const selected = accounts.find((item) => item.id === selectedMailAccountId) ?? null;
+
+  let inbox = "";
+  if (selected && loadInbox) {
+    inbox = await renderInbox(selected);
+  } else if (selected) {
+    inbox = `<div class="library-empty compact">Kliknite “Osvježi INBOX” za sigurni read-only dohvat poruka.</div>`;
+  }
+
+  content.innerHTML = `
+    <details class="library-create" ${accounts.length === 0 ? "open" : ""}>
+      <summary>Dodaj mail račun</summary>
+      ${mailAccountForm()}
+    </details>
+    ${accounts.length > 0 ? `
+      <div class="mail-account-list">${accounts.map((account) => `
+        <article class="mail-account ${account.id === selectedMailAccountId ? "active" : ""}">
+          <button class="library-main" data-select-mail="${account.id}">
+            <strong>${escapeHtml(account.displayName)}</strong>
+            <span>${escapeHtml(account.email)}</span>
+          </button>
+          <button class="library-icon danger" data-delete-mail="${account.id}" title="Ukloni račun">×</button>
+        </article>`).join("")}</div>` : ""}
+    ${selected ? `
+      <div class="mail-toolbar">
+        <div><strong>${escapeHtml(selected.displayName)}</strong><span>${escapeHtml(selected.email)}</span></div>
+        <button class="library-secondary" data-refresh-mail="${selected.id}">Osvježi INBOX</button>
+      </div>
+      ${composeForm(selected)}
+      ${inbox}
+      <p class="vault-note mail-privacy-note">Ghost Mail prikazuje samo zaglavlja INBOX-a. Remote HTML, slike i tracking pikseli se ne učitavaju.</p>` : `<div class="library-empty compact">Dodajte račun za korištenje Ghost Maila.</div>`}
+  `;
+}
+
 async function renderSection(): Promise<void> {
   if (currentSection === "favorites") await renderFavorites();
   if (currentSection === "history") await renderHistory();
   if (currentSection === "downloads") await renderDownloads();
   if (currentSection === "vault") await renderVault();
+  if (currentSection === "mail") await renderMail(false);
 }
 
 async function addCurrentFavorite(): Promise<void> {
   const tab = activeTab();
-  if (!tab?.url) return;
+  if (!tab?.url) {
+    showMessage("Otvorite web-stranicu prije spremanja favorita.");
+    return;
+  }
   await invoke("add_bookmark", {
     title: tab.title || shortHost(tab.url),
     url: tab.url,
   });
   const button = document.querySelector<HTMLButtonElement>("#bookmark-current");
   if (button) button.textContent = "★";
+  showMessage("Dodano u favorite.");
   if (drawer?.classList.contains("open") && currentSection === "favorites") {
     await renderFavorites();
   }
@@ -264,6 +402,7 @@ async function handleContentClick(event: Event): Promise<void> {
     if (!activeTabId) throw new Error("Otvorite web-stranicu prije ispune prijave.");
     await invoke("vault_fill", { id: fill.dataset.fillVault, tabId: activeTabId });
     await closeDrawer();
+    showMessage("Prijava je unesena samo na odgovarajuću domenu.");
     return;
   }
 
@@ -271,6 +410,30 @@ async function handleContentClick(event: Event): Promise<void> {
   if (removeVault?.dataset.deleteVault) {
     await invoke("vault_delete", { id: removeVault.dataset.deleteVault });
     await renderVault();
+    return;
+  }
+
+  const selectMail = target.closest<HTMLElement>("[data-select-mail]");
+  if (selectMail?.dataset.selectMail) {
+    selectedMailAccountId = selectMail.dataset.selectMail;
+    await renderMail(false);
+    return;
+  }
+
+  const refreshMail = target.closest<HTMLElement>("[data-refresh-mail]");
+  if (refreshMail?.dataset.refreshMail) {
+    selectedMailAccountId = refreshMail.dataset.refreshMail;
+    showMessage("Sigurno dohvaćam INBOX…");
+    await renderMail(true);
+    return;
+  }
+
+  const deleteMail = target.closest<HTMLElement>("[data-delete-mail]");
+  if (deleteMail?.dataset.deleteMail) {
+    await invoke("mail_delete_account", { id: deleteMail.dataset.deleteMail });
+    if (selectedMailAccountId === deleteMail.dataset.deleteMail) selectedMailAccountId = null;
+    await renderMail(false);
+    showMessage("Mail račun i spremljena vjerodajnica su uklonjeni.");
     return;
   }
 
@@ -286,18 +449,70 @@ async function handleContentClick(event: Event): Promise<void> {
   }
 }
 
-async function handleContentSubmit(event: SubmitEvent): Promise<void> {
-  const form = event.target as HTMLFormElement;
-  if (form.id !== "vault-form") return;
-  event.preventDefault();
-
+async function submitVault(form: HTMLFormElement): Promise<void> {
   const origin = (form.querySelector<HTMLInputElement>("#vault-origin")?.value ?? "").trim();
   const username = (form.querySelector<HTMLInputElement>("#vault-username")?.value ?? "").trim();
   const password = form.querySelector<HTMLInputElement>("#vault-password")?.value ?? "";
   const label = (form.querySelector<HTMLInputElement>("#vault-label")?.value ?? "").trim();
   await invoke("vault_save", { id: null, origin, username, password, label });
   form.reset();
+  showMessage("Prijava je sigurno spremljena lokalno.");
   await renderVault();
+}
+
+async function submitMailAccount(form: HTMLFormElement): Promise<void> {
+  const displayName = (form.querySelector<HTMLInputElement>("#mail-display-name")?.value ?? "").trim();
+  const email = (form.querySelector<HTMLInputElement>("#mail-email")?.value ?? "").trim();
+  const passwordInput = form.querySelector<HTMLInputElement>("#mail-password");
+  const password = passwordInput?.value ?? "";
+  const imapHost = (form.querySelector<HTMLInputElement>("#mail-imap-host")?.value ?? "").trim();
+  const imapPort = Number(form.querySelector<HTMLInputElement>("#mail-imap-port")?.value ?? "993");
+  const smtpHost = (form.querySelector<HTMLInputElement>("#mail-smtp-host")?.value ?? "").trim();
+  const smtpPort = Number(form.querySelector<HTMLSelectElement>("#mail-smtp-port")?.value ?? "465");
+
+  showMessage("Provjeravam IMAP i SMTP TLS vezu…");
+  const account = await invoke<MailAccount>("mail_add_account", {
+    email,
+    displayName,
+    password,
+    imapHost,
+    imapPort,
+    smtpHost,
+    smtpPort,
+  });
+  if (passwordInput) passwordInput.value = "";
+  selectedMailAccountId = account.id;
+  form.reset();
+  showMessage("Mail račun je provjeren i sigurno spremljen.");
+  await renderMail(false);
+}
+
+async function submitMail(form: HTMLFormElement): Promise<void> {
+  const id = form.dataset.accountId;
+  if (!id) throw new Error("Mail račun nije odabran.");
+  const to = (form.querySelector<HTMLInputElement>("#mail-to")?.value ?? "").trim();
+  const subject = (form.querySelector<HTMLInputElement>("#mail-subject")?.value ?? "").trim();
+  const body = form.querySelector<HTMLTextAreaElement>("#mail-body")?.value ?? "";
+  showMessage("Šaljem poruku preko sigurne SMTP veze…");
+  await invoke("mail_send", { id, to, subject, body });
+  form.reset();
+  showMessage("Poruka je poslana.");
+}
+
+async function handleContentSubmit(event: SubmitEvent): Promise<void> {
+  const form = event.target as HTMLFormElement;
+  if (!["vault-form", "mail-account-form", "mail-compose-form"].includes(form.id)) return;
+  event.preventDefault();
+
+  const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+  if (submit) submit.disabled = true;
+  try {
+    if (form.id === "vault-form") await submitVault(form);
+    if (form.id === "mail-account-form") await submitMailAccount(form);
+    if (form.id === "mail-compose-form") await submitMail(form);
+  } finally {
+    if (submit?.isConnected) submit.disabled = false;
+  }
 }
 
 async function initialize(): Promise<void> {
@@ -319,7 +534,7 @@ async function initialize(): Promise<void> {
   favorite.setAttribute("aria-label", "Dodaj u favorite");
   favorite.textContent = "☆";
   shield.before(favorite);
-  favorite.addEventListener("click", () => void addCurrentFavorite().catch(console.error));
+  favorite.addEventListener("click", () => void safeUi(addCurrentFavorite));
 
   const separator = document.createElement("div");
   separator.className = "menu-separator";
@@ -330,6 +545,7 @@ async function initialize(): Promise<void> {
     ["history", "Povijest", "Ctrl+H"],
     ["downloads", "Preuzimanja", "Ctrl+J"],
     ["vault", "Password Vault", "Ctrl+Shift+P"],
+    ["mail", "Ghost Mail", "Ctrl+Shift+M"],
   ];
   for (const [section, label, shortcut] of sections) {
     const button = document.createElement("button");
@@ -337,7 +553,7 @@ async function initialize(): Promise<void> {
     button.type = "button";
     button.dataset.librarySection = section;
     button.innerHTML = `<span>${escapeHtml(label)}</span><kbd>${escapeHtml(shortcut)}</kbd>`;
-    button.addEventListener("click", () => void openDrawer(section).catch(console.error));
+    button.addEventListener("click", () => void safeUi(() => openDrawer(section)));
     fragment.append(button);
   }
   menu.querySelector(".menu-footer")?.before(fragment);
@@ -354,27 +570,30 @@ async function initialize(): Promise<void> {
   drawer = document.querySelector("#library-drawer");
   content = document.querySelector("#library-content");
   titleEl = document.querySelector("#library-title");
-  document.querySelector("#library-close")?.addEventListener("click", () => void closeDrawer().catch(console.error));
-  content?.addEventListener("click", (event) => void handleContentClick(event).catch(console.error));
-  content?.addEventListener("submit", (event) => void handleContentSubmit(event as SubmitEvent).catch(console.error));
+  document.querySelector("#library-close")?.addEventListener("click", () => void safeUi(closeDrawer));
+  content?.addEventListener("click", (event) => void safeUi(() => handleContentClick(event)));
+  content?.addEventListener("submit", (event) => void safeUi(() => handleContentSubmit(event as SubmitEvent)));
 
   window.addEventListener("keydown", (event) => {
     const key = event.key.toLowerCase();
     if (event.ctrlKey && event.shiftKey && key === "b") {
       event.preventDefault();
-      void openDrawer("favorites").catch(console.error);
+      void safeUi(() => openDrawer("favorites"));
     } else if (event.ctrlKey && !event.shiftKey && key === "h") {
       event.preventDefault();
-      void openDrawer("history").catch(console.error);
+      void safeUi(() => openDrawer("history"));
     } else if (event.ctrlKey && !event.shiftKey && key === "j") {
       event.preventDefault();
-      void openDrawer("downloads").catch(console.error);
+      void safeUi(() => openDrawer("downloads"));
     } else if (event.ctrlKey && event.shiftKey && key === "p") {
       event.preventDefault();
-      void openDrawer("vault").catch(console.error);
+      void safeUi(() => openDrawer("vault"));
+    } else if (event.ctrlKey && event.shiftKey && key === "m") {
+      event.preventDefault();
+      void safeUi(() => openDrawer("mail"));
     } else if (event.key === "Escape" && drawer?.classList.contains("open")) {
       event.preventDefault();
-      void closeDrawer().catch(console.error);
+      void safeUi(closeDrawer);
     }
   }, true);
 }
@@ -395,11 +614,11 @@ await listen<TabEvent>("ghost://tab-event", (event) => {
   }
 });
 
-await listen<PopupNavigation>("ghost://open-current-tab", (event) => {
-  if (event.payload?.tabId) activeTabId = event.payload.tabId;
+await listen<ActiveTabEvent>("ghost://active-tab", (event) => {
+  if (event.payload?.id) activeTabId = event.payload.id;
 });
 
-await listen<{ tabId?: string; url?: string }>("ghost://download", (event) => {
+await listen<{ url?: string }>("ghost://download", (event) => {
   if (event.payload?.url) {
     void invoke("record_download", { url: event.payload.url }).catch(() => undefined);
   }
@@ -414,6 +633,11 @@ const activeObserver = new MutationObserver(() => {
   const active = document.querySelector<HTMLElement>(".tab.active[data-tab]")?.dataset.tab;
   if (active) activeTabId = active;
 });
-activeObserver.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+activeObserver.observe(document.documentElement, {
+  childList: true,
+  subtree: true,
+  attributes: true,
+  attributeFilter: ["class"],
+});
 
 void initialize();

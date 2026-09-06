@@ -83,7 +83,7 @@ jobs:
             throw "Library UI is not wired to overlay coordination"
           }
           $lib = Get-Content "src-tauri/src/lib.rs" -Raw
-          if (!$lib.Contains("cleanup::clear_browsing_data")) {
+          if (!$lib.Contains("cleanup::clear_all_browsing_data")) {
             throw "Global clear action is not routed through complete profile cleanup"
           }
 

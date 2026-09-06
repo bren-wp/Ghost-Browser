@@ -1,7 +1,10 @@
 use crate::privacy::{PrivacyEngine, DOCUMENT_START_SCRIPT};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::atomic::{AtomicU64, Ordering},
+};
 use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, WebviewBuilder, WebviewUrl,
     webview::{DownloadEvent, NewWindowResponse, PageLoadEvent},
@@ -10,6 +13,9 @@ use url::Url;
 use uuid::Uuid;
 
 const MAX_URL_LENGTH: usize = 8192;
+const MAX_TABS: usize = 512;
+const MAX_LIVE_WEBVIEWS: usize = 16;
+const PRIVACY_BROWSER_ARGS: &str = "--disable-sync --no-first-run --disable-default-apps --disable-domain-reliability --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,6 +26,7 @@ pub struct TabSnapshot {
     pub loading: bool,
     pub blocked: u64,
     pub has_webview: bool,
+    pub discarded: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -34,6 +41,18 @@ struct TabEvent {
     loading: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     blocked: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    discarded: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserStats {
+    pub total_tabs: usize,
+    pub live_webviews: usize,
+    pub discarded_tabs: usize,
+    pub max_live_webviews: usize,
+    pub max_tabs: usize,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -60,12 +79,14 @@ impl Default for ContentBounds {
 struct TabRecord {
     snapshot: TabSnapshot,
     webview_label: Option<String>,
+    last_active: u64,
 }
 
 pub struct BrowserState {
     tabs: Mutex<HashMap<String, TabRecord>>,
     active: Mutex<Option<String>>,
     bounds: Mutex<ContentBounds>,
+    activity_clock: AtomicU64,
     pub privacy: PrivacyEngine,
 }
 
@@ -75,7 +96,19 @@ impl BrowserState {
             tabs: Mutex::new(HashMap::new()),
             active: Mutex::new(None),
             bounds: Mutex::new(ContentBounds::default()),
+            activity_clock: AtomicU64::new(1),
             privacy: PrivacyEngine::new(),
+        }
+    }
+
+    fn next_activity(&self) -> u64 {
+        self.activity_clock.fetch_add(1, Ordering::Relaxed)
+    }
+
+    fn touch_tab(&self, tab_id: &str) {
+        let tick = self.next_activity();
+        if let Some(record) = self.tabs.lock().get_mut(tab_id) {
+            record.last_active = tick;
         }
     }
 
@@ -93,13 +126,25 @@ fn validate_tab_id(tab_id: &str) -> Result<(), String> {
         .map_err(|_| "Neispravan ID taba".to_string())
 }
 
-fn is_allowed_navigation_url(url: &Url) -> bool {
+fn is_allowed_http_url(url: &Url) -> bool {
     matches!(url.scheme(), "http" | "https")
         && url.host_str().is_some()
         && url.username().is_empty()
         && url.password().is_none()
         && url.as_str().len() <= MAX_URL_LENGTH
         && !url.as_str().chars().any(char::is_control)
+}
+
+fn is_allowed_navigation_url(url: &Url) -> bool {
+    if is_allowed_http_url(url) {
+        return true;
+    }
+
+    if url.as_str().len() > MAX_URL_LENGTH || url.as_str().chars().any(char::is_control) {
+        return false;
+    }
+
+    matches!(url.scheme(), "about" | "blob")
 }
 
 fn validate_url(input: &str) -> Result<Url, String> {
@@ -111,7 +156,7 @@ fn validate_url(input: &str) -> Result<Url, String> {
     }
 
     let mut url = Url::parse(input).map_err(|_| "Neispravna web-adresa".to_string())?;
-    if !is_allowed_navigation_url(&url) {
+    if !is_allowed_http_url(&url) {
         return Err("Ghost Browser dopušta samo valjane HTTP i HTTPS adrese".into());
     }
 
@@ -135,6 +180,10 @@ fn validate_url(input: &str) -> Result<Url, String> {
         "vero_conv",
         "vero_id",
         "wickedid",
+        "twclid",
+        "ttclid",
+        "gbraid",
+        "wbraid",
     ];
 
     let pairs: Vec<(String, String)> = url
@@ -157,8 +206,268 @@ fn validate_url(input: &str) -> Result<Url, String> {
     Ok(url)
 }
 
+fn live_webview_count(tabs: &HashMap<String, TabRecord>) -> usize {
+    tabs.values()
+        .filter(|record| record.webview_label.is_some())
+        .count()
+}
+
+fn select_discard_candidate(
+    tabs: &HashMap<String, TabRecord>,
+    active_id: Option<&str>,
+    keep_id: &str,
+) -> Option<String> {
+    tabs.iter()
+        .filter(|(id, record)| {
+            record.webview_label.is_some()
+                && id.as_str() != keep_id
+                && active_id.is_none_or(|active| id.as_str() != active)
+        })
+        .min_by_key(|(_, record)| record.last_active)
+        .map(|(id, _)| id.clone())
+}
+
+fn emit_tab_event(app: &AppHandle, event: TabEvent) {
+    let _ = app.emit_to("main", "ghost://tab-event", event);
+}
+
+fn discard_tab_webview(
+    app: &AppHandle,
+    state: &BrowserState,
+    tab_id: &str,
+) -> Result<bool, String> {
+    let label = {
+        let mut tabs = state.tabs.lock();
+        let Some(record) = tabs.get_mut(tab_id) else {
+            return Ok(false);
+        };
+        let Some(label) = record.webview_label.take() else {
+            return Ok(false);
+        };
+
+        record.snapshot.has_webview = false;
+        record.snapshot.discarded = true;
+        record.snapshot.loading = false;
+        label
+    };
+
+    if let Some(webview) = app.get_webview(&label) {
+        webview.close().map_err(|error| error.to_string())?;
+    }
+
+    emit_tab_event(
+        app,
+        TabEvent {
+            id: tab_id.to_string(),
+            title: None,
+            url: None,
+            loading: Some(false),
+            blocked: None,
+            discarded: Some(true),
+        },
+    );
+    Ok(true)
+}
+
+fn enforce_live_budget(
+    app: &AppHandle,
+    state: &BrowserState,
+    keep_id: &str,
+) -> Result<(), String> {
+    loop {
+        let active_id = state.active.lock().clone();
+        let candidate = {
+            let tabs = state.tabs.lock();
+            if live_webview_count(&tabs) < MAX_LIVE_WEBVIEWS {
+                return Ok(());
+            }
+            select_discard_candidate(&tabs, active_id.as_deref(), keep_id)
+        };
+
+        let Some(candidate) = candidate else {
+            return Ok(());
+        };
+        discard_tab_webview(app, state, &candidate)?;
+    }
+}
+
+fn show_only_active(app: &AppHandle, active_id: &str) -> Result<(), String> {
+    let active_label = format!("tab-{active_id}");
+    for (label, webview) in app.webviews() {
+        if !label.starts_with("tab-") {
+            continue;
+        }
+
+        if label == active_label {
+            webview.show().map_err(|error| error.to_string())?;
+            let _ = webview.set_focus();
+        } else {
+            let _ = webview.hide();
+        }
+    }
+    Ok(())
+}
+
+fn create_webview(
+    app: &AppHandle,
+    state: &BrowserState,
+    tab_id: &str,
+    target: Url,
+) -> Result<(), String> {
+    enforce_live_budget(app, state, tab_id)?;
+
+    let window = app
+        .get_window("main")
+        .ok_or("Glavni prozor nije pronađen")?;
+    let bounds = *state.bounds.lock();
+    let label = format!("tab-{tab_id}");
+    let tab_for_load = tab_id.to_string();
+    let tab_for_title = tab_id.to_string();
+    let tab_for_download = tab_id.to_string();
+    let tab_for_new_window = tab_id.to_string();
+    let label_for_load = label.clone();
+    let label_for_title = label.clone();
+    let app_for_new_window = app.clone();
+
+    let builder = WebviewBuilder::new(label.clone(), WebviewUrl::External(target.clone()))
+        .initialization_script_for_all_frames(DOCUMENT_START_SCRIPT)
+        .general_autofill_enabled(false)
+        .zoom_hotkeys_enabled(true)
+        .additional_browser_args(PRIVACY_BROWSER_ARGS)
+        .on_navigation(is_allowed_navigation_url)
+        .on_new_window(move |url, _features| {
+            if is_allowed_http_url(&url) {
+                let _ = app_for_new_window.emit_to(
+                    "main",
+                    "ghost://open-current-tab",
+                    serde_json::json!({
+                        "tabId": tab_for_new_window,
+                        "url": url.to_string()
+                    }),
+                );
+            }
+            NewWindowResponse::Deny
+        })
+        .on_page_load(move |webview, payload| {
+            let loading = matches!(payload.event(), PageLoadEvent::Started);
+            let url = payload.url().to_string();
+            let mut should_emit = false;
+
+            if let Some(state) = webview.try_state::<BrowserState>() {
+                if let Some(record) = state.tabs.lock().get_mut(&tab_for_load) {
+                    if record.webview_label.as_deref() == Some(label_for_load.as_str()) {
+                        record.snapshot.loading = loading;
+                        record.snapshot.url = Some(url.clone());
+                        record.snapshot.has_webview = true;
+                        record.snapshot.discarded = false;
+                        should_emit = true;
+                    }
+                }
+            }
+
+            if should_emit {
+                let _ = webview.emit_to(
+                    "main",
+                    "ghost://tab-event",
+                    TabEvent {
+                        id: tab_for_load.clone(),
+                        title: None,
+                        url: Some(url),
+                        loading: Some(loading),
+                        blocked: None,
+                        discarded: Some(false),
+                    },
+                );
+            }
+        })
+        .on_document_title_changed(move |webview, title| {
+            let mut should_emit = false;
+            if let Some(state) = webview.try_state::<BrowserState>() {
+                if let Some(record) = state.tabs.lock().get_mut(&tab_for_title) {
+                    if record.webview_label.as_deref() == Some(label_for_title.as_str()) {
+                        record.snapshot.title = if title.trim().is_empty() {
+                            "Novi tab".into()
+                        } else {
+                            title.clone()
+                        };
+                        should_emit = true;
+                    }
+                }
+            }
+
+            if should_emit {
+                let _ = webview.emit_to(
+                    "main",
+                    "ghost://tab-event",
+                    TabEvent {
+                        id: tab_for_title.clone(),
+                        title: Some(title),
+                        url: None,
+                        loading: None,
+                        blocked: None,
+                        discarded: None,
+                    },
+                );
+            }
+        })
+        .on_download(move |webview, event| match event {
+            DownloadEvent::Requested { url, .. } => {
+                let allowed = is_allowed_http_url(&url);
+                if allowed {
+                    let _ = webview.emit_to(
+                        "main",
+                        "ghost://download",
+                        serde_json::json!({
+                            "tabId": tab_for_download,
+                            "url": url.to_string()
+                        }),
+                    );
+                }
+                allowed
+            }
+            _ => true,
+        });
+
+    let webview = window
+        .add_child(
+            builder,
+            LogicalPosition::new(bounds.x, bounds.y),
+            LogicalSize::new(bounds.width.max(1.0), bounds.height.max(1.0)),
+        )
+        .map_err(|error| error.to_string())?;
+
+    #[cfg(windows)]
+    crate::webview2_guard::install(&webview, tab_id.to_string(), app.clone())?;
+
+    {
+        let mut tabs = state.tabs.lock();
+        let record = tabs
+            .get_mut(tab_id)
+            .ok_or("Tab je zatvoren tijekom inicijalizacije")?;
+        record.webview_label = Some(label);
+        record.snapshot.url = Some(target.to_string());
+        record.snapshot.loading = true;
+        record.snapshot.has_webview = true;
+        record.snapshot.discarded = false;
+    }
+
+    let is_active = state.active.lock().as_deref() == Some(tab_id);
+    if is_active {
+        webview.show().map_err(|error| error.to_string())?;
+        let _ = webview.set_focus();
+    } else {
+        let _ = webview.hide();
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn create_tab(state: State<'_, BrowserState>) -> Result<TabSnapshot, String> {
+    if state.tabs.lock().len() >= MAX_TABS {
+        return Err(format!("Dosegnut je sigurnosni limit od {MAX_TABS} otvorenih tabova"));
+    }
+
     let id = Uuid::new_v4().to_string();
     let snapshot = TabSnapshot {
         id: id.clone(),
@@ -167,6 +476,7 @@ pub async fn create_tab(state: State<'_, BrowserState>) -> Result<TabSnapshot, S
         loading: false,
         blocked: 0,
         has_webview: false,
+        discarded: false,
     };
 
     state.tabs.lock().insert(
@@ -174,6 +484,7 @@ pub async fn create_tab(state: State<'_, BrowserState>) -> Result<TabSnapshot, S
         TabRecord {
             snapshot: snapshot.clone(),
             webview_label: None,
+            last_active: state.next_activity(),
         },
     );
     *state.active.lock() = Some(id);
@@ -187,27 +498,23 @@ pub async fn set_active_tab(
     tab_id: String,
 ) -> Result<(), String> {
     validate_tab_id(&tab_id)?;
-    if !state.tabs.lock().contains_key(&tab_id) {
-        return Err("Tab ne postoji".into());
-    }
+    let (has_webview, stored_url) = {
+        let tabs = state.tabs.lock();
+        let record = tabs.get(&tab_id).ok_or("Tab ne postoji")?;
+        (record.webview_label.is_some(), record.snapshot.url.clone())
+    };
 
     *state.active.lock() = Some(tab_id.clone());
-    let active_label = format!("tab-{tab_id}");
+    state.touch_tab(&tab_id);
 
-    for (label, webview) in app.webviews() {
-        if !label.starts_with("tab-") {
-            continue;
-        }
-
-        if label == active_label {
-            webview.show().map_err(|error| error.to_string())?;
-            let _ = webview.set_focus();
-        } else {
-            let _ = webview.hide();
+    if !has_webview {
+        if let Some(url) = stored_url {
+            let target = validate_url(&url)?;
+            create_webview(&app, &state, &tab_id, target)?;
         }
     }
 
-    Ok(())
+    show_only_active(&app, &tab_id)
 }
 
 #[tauri::command]
@@ -252,133 +559,39 @@ pub async fn navigate_tab(
 ) -> Result<(), String> {
     validate_tab_id(&tab_id)?;
     let target = validate_url(&target)?;
+
     let existing_label = state
         .tabs
         .lock()
         .get(&tab_id)
-        .and_then(|record| record.webview_label.clone());
+        .ok_or("Tab ne postoji")?
+        .webview_label
+        .clone();
 
     if let Some(label) = existing_label {
-        let webview = app
-            .get_webview(&label)
-            .ok_or("WebView taba nije pronađen")?;
-        webview.navigate(target).map_err(|error| error.to_string())?;
-        return Ok(());
+        if let Some(webview) = app.get_webview(&label) {
+            {
+                let mut tabs = state.tabs.lock();
+                if let Some(record) = tabs.get_mut(&tab_id) {
+                    record.snapshot.url = Some(target.to_string());
+                    record.snapshot.loading = true;
+                    record.snapshot.discarded = false;
+                }
+            }
+            state.touch_tab(&tab_id);
+            return webview.navigate(target).map_err(|error| error.to_string());
+        }
+
+        if let Some(record) = state.tabs.lock().get_mut(&tab_id) {
+            record.webview_label = None;
+            record.snapshot.has_webview = false;
+            record.snapshot.discarded = true;
+        }
     }
 
-    let window = app
-        .get_window("main")
-        .ok_or("Glavni prozor nije pronađen")?;
-    let bounds = *state.bounds.lock();
-    let label = format!("tab-{tab_id}");
-    let tab_for_load = tab_id.clone();
-    let tab_for_title = tab_id.clone();
-    let tab_for_download = tab_id.clone();
-    let app_for_new_window = app.clone();
-
-    let builder = WebviewBuilder::new(label.clone(), WebviewUrl::External(target.clone()))
-        .initialization_script_for_all_frames(DOCUMENT_START_SCRIPT)
-        .general_autofill_enabled(false)
-        .zoom_hotkeys_enabled(true)
-        .on_navigation(is_allowed_navigation_url)
-        .on_new_window(move |url, _features| {
-            if is_allowed_navigation_url(&url) {
-                let _ = app_for_new_window.emit_to(
-                    "main",
-                    "ghost://open-new-tab",
-                    url.to_string(),
-                );
-            }
-            NewWindowResponse::Deny
-        })
-        .on_page_load(move |webview, payload| {
-            let loading = matches!(payload.event(), PageLoadEvent::Started);
-            let url = payload.url().to_string();
-
-            if let Some(state) = webview.try_state::<BrowserState>() {
-                if let Some(record) = state.tabs.lock().get_mut(&tab_for_load) {
-                    record.snapshot.loading = loading;
-                    record.snapshot.url = Some(url.clone());
-                    record.snapshot.has_webview = true;
-                }
-            }
-
-            let _ = webview.emit_to(
-                "main",
-                "ghost://tab-event",
-                TabEvent {
-                    id: tab_for_load.clone(),
-                    title: None,
-                    url: Some(url),
-                    loading: Some(loading),
-                    blocked: None,
-                },
-            );
-        })
-        .on_document_title_changed(move |webview, title| {
-            if let Some(state) = webview.try_state::<BrowserState>() {
-                if let Some(record) = state.tabs.lock().get_mut(&tab_for_title) {
-                    record.snapshot.title = if title.trim().is_empty() {
-                        "Novi tab".into()
-                    } else {
-                        title.clone()
-                    };
-                }
-            }
-
-            let _ = webview.emit_to(
-                "main",
-                "ghost://tab-event",
-                TabEvent {
-                    id: tab_for_title.clone(),
-                    title: Some(title),
-                    url: None,
-                    loading: None,
-                    blocked: None,
-                },
-            );
-        })
-        .on_download(move |webview, event| match event {
-            DownloadEvent::Requested { url, .. } => {
-                let allowed = matches!(url.scheme(), "http" | "https");
-                if allowed {
-                    let _ = webview.emit_to(
-                        "main",
-                        "ghost://download",
-                        serde_json::json!({
-                            "tabId": tab_for_download,
-                            "url": url.to_string()
-                        }),
-                    );
-                }
-                allowed
-            }
-            _ => true,
-        });
-
-    let webview = window
-        .add_child(
-            builder,
-            LogicalPosition::new(bounds.x, bounds.y),
-            LogicalSize::new(bounds.width.max(1.0), bounds.height.max(1.0)),
-        )
-        .map_err(|error| error.to_string())?;
-
-    #[cfg(windows)]
-    crate::webview2_guard::install(&webview, tab_id.clone(), app.clone())?;
-
-    {
-        let mut tabs = state.tabs.lock();
-        let record = tabs
-            .get_mut(&tab_id)
-            .ok_or("Tab je zatvoren tijekom inicijalizacije")?;
-        record.webview_label = Some(label);
-        record.snapshot.url = Some(target.to_string());
-        record.snapshot.loading = true;
-        record.snapshot.has_webview = true;
-    }
-
-    set_active_tab(app, state, tab_id).await
+    create_webview(&app, &state, &tab_id, target)?;
+    state.touch_tab(&tab_id);
+    Ok(())
 }
 
 #[tauri::command]
@@ -416,7 +629,7 @@ fn tab_webview(
         .lock()
         .get(tab_id)
         .and_then(|record| record.webview_label.clone())
-        .ok_or("Tab još nema otvorenu web-stranicu")?;
+        .ok_or("Tab nema aktivan prikaz")?;
 
     app.get_webview(&label)
         .ok_or_else(|| "WebView taba nije pronađen".into())
@@ -512,4 +725,101 @@ pub async fn clear_browsing_data(
     }
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn discard_inactive_tabs(
+    app: AppHandle,
+    state: State<'_, BrowserState>,
+) -> Result<usize, String> {
+    let active_id = state.active.lock().clone();
+    let mut discarded = 0usize;
+
+    loop {
+        let candidate = {
+            let tabs = state.tabs.lock();
+            if live_webview_count(&tabs) <= 1 {
+                break;
+            }
+            select_discard_candidate(&tabs, active_id.as_deref(), active_id.as_deref().unwrap_or(""))
+        };
+
+        let Some(candidate) = candidate else {
+            break;
+        };
+        if discard_tab_webview(&app, &state, &candidate)? {
+            discarded += 1;
+        }
+    }
+
+    Ok(discarded)
+}
+
+#[tauri::command]
+pub async fn browser_stats(state: State<'_, BrowserState>) -> Result<BrowserStats, String> {
+    let tabs = state.tabs.lock();
+    Ok(BrowserStats {
+        total_tabs: tabs.len(),
+        live_webviews: live_webview_count(&tabs),
+        discarded_tabs: tabs
+            .values()
+            .filter(|record| record.snapshot.discarded)
+            .count(),
+        max_live_webviews: MAX_LIVE_WEBVIEWS,
+        max_tabs: MAX_TABS,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fake_record(index: u64) -> TabRecord {
+        TabRecord {
+            snapshot: TabSnapshot {
+                id: index.to_string(),
+                title: format!("Tab {index}"),
+                url: Some(format!("https://example.com/{index}")),
+                loading: false,
+                blocked: 0,
+                has_webview: true,
+                discarded: false,
+            },
+            webview_label: Some(format!("tab-{index}")),
+            last_active: index,
+        }
+    }
+
+    #[test]
+    fn scheduler_keeps_160_tabs_with_bounded_live_webviews() {
+        let mut tabs = HashMap::new();
+        for index in 0..160u64 {
+            tabs.insert(index.to_string(), fake_record(index));
+        }
+
+        let active = "159";
+        while live_webview_count(&tabs) > MAX_LIVE_WEBVIEWS {
+            let candidate = select_discard_candidate(&tabs, Some(active), active)
+                .expect("candidate should exist while over budget");
+            let record = tabs.get_mut(&candidate).expect("candidate must exist");
+            record.webview_label = None;
+            record.snapshot.has_webview = false;
+            record.snapshot.discarded = true;
+        }
+
+        assert_eq!(tabs.len(), 160);
+        assert_eq!(live_webview_count(&tabs), MAX_LIVE_WEBVIEWS);
+        assert!(tabs.get(active).unwrap().webview_label.is_some());
+        assert_eq!(
+            tabs.values().filter(|record| record.snapshot.discarded).count(),
+            160 - MAX_LIVE_WEBVIEWS
+        );
+    }
+
+    #[test]
+    fn tracker_parameters_are_removed_without_damaging_regular_query_data() {
+        let url = validate_url("https://example.com/page?utm_source=test&id=42&fbclid=x")
+            .expect("valid URL");
+        assert_eq!(url.as_str(), "https://example.com/page?id=42");
+    }
 }

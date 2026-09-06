@@ -92,19 +92,29 @@ function Set-BrandingValue {
 
 $chromiumStrings = Join-Path $sourceRootResolved 'chrome/app/chromium_strings.grd'
 $settingsStrings = Join-Path $sourceRootResolved 'chrome/app/settings_chromium_strings.grdp'
+$componentStrings = Join-Path $sourceRootResolved 'components/components_chromium_strings.grd'
+$extensionStrings = Join-Path $sourceRootResolved 'extensions/strings/extensions_chromium_strings.grdp'
 $urlConstants = Join-Path $sourceRootResolved 'chrome/common/url_constants.h'
 $brandingFile = Join-Path $sourceRootResolved 'chrome/app/theme/chromium/BRANDING'
 
-foreach ($required in @($chromiumStrings, $settingsStrings, $urlConstants, $brandingFile)) {
+foreach ($required in @(
+  $chromiumStrings,
+  $settingsStrings,
+  $componentStrings,
+  $extensionStrings,
+  $urlConstants,
+  $brandingFile
+)) {
   if (!(Test-Path $required -PathType Leaf)) {
     throw "Pinned source layout changed; expected file missing: $required"
   }
 }
 
-# Replace product names only inside GRIT message bodies. Descriptions/comments and
-# third-party attribution remain untouched.
-Replace-GritProductBranding -Path $chromiumStrings
-Replace-GritProductBranding -Path $settingsStrings
+# Replace product branding only inside GRIT message bodies. XML comments,
+# descriptions, source-code copyright headers and third-party trees stay intact.
+foreach ($path in @($chromiumStrings, $settingsStrings, $componentStrings, $extensionStrings)) {
+  Replace-GritProductBranding -Path $path
+}
 
 Set-GritMessage -Path $chromiumStrings -MessageId 'IDS_PRODUCT_NAME' -Value $config.product.name
 Set-GritMessage -Path $chromiumStrings -MessageId 'IDS_SHORT_PRODUCT_NAME' -Value $config.product.shortName
@@ -114,6 +124,16 @@ Set-GritMessage -Path $chromiumStrings -MessageId 'IDS_WELCOME_TO_CHROME' -Value
 Set-GritMessage -Path $settingsStrings -MessageId 'IDS_RELAUNCH_CONFIRMATION_DIALOG_TITLE' -Value 'Relaunch Ghosium Browser?'
 Set-GritMessage -Path $settingsStrings -MessageId 'IDS_SETTINGS_ABOUT_PROGRAM' -Value 'About Ghosium Browser'
 Set-GritMessage -Path $settingsStrings -MessageId 'IDS_SETTINGS_GET_HELP_USING_CHROME' -Value 'Ghosium Support'
+
+Set-GritMessage -Path $componentStrings -MessageId 'IDS_SHORT_PRODUCT_LOGO_ALT_TEXT' -Value 'Ghosium logo'
+
+# These two messages are legal attribution, not Ghosium product branding. Keep
+# Chromium named here as the upstream open-source project while making it clear
+# that Ghosium Browser is the product the user is running.
+$legalLicense = 'Ghosium Browser is built with the <ph name="BEGIN_LINK_CHROMIUM">&lt;a target="_blank" href="$1" aria-description="$3"&gt;</ph>Chromium<ph name="END_LINK_CHROMIUM">&lt;/a&gt;</ph> open-source project and other <ph name="BEGIN_LINK_OSS">&lt;a target="_blank" href="$2" aria-description="$3"&gt;</ph>open-source software<ph name="END_LINK_OSS">&lt;/a&gt;</ph>.'
+$legalChromium = 'Ghosium Browser is built with the <ph name="BEGIN_LINK_CHROMIUM">&lt;a target="_blank" href="$1"&gt;</ph>Chromium<ph name="END_LINK_CHROMIUM">&lt;/a&gt;</ph> open-source project.'
+Set-GritMessage -Path $componentStrings -MessageId 'IDS_VERSION_UI_LICENSE' -Value $legalLicense
+Set-GritMessage -Path $componentStrings -MessageId 'IDS_VERSION_UI_LICENSE_CHROMIUM' -Value $legalChromium
 
 # Windows file metadata and product identity are sourced from Chromium BRANDING.
 Set-BrandingValue -Path $brandingFile -Key 'COMPANY_FULLNAME' -Value 'Brendigo'

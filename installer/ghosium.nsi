@@ -20,8 +20,12 @@ Name "${PRODUCT_NAME} ${GHOSIUM_VERSION}"
 OutFile "${GHOSIUM_ARTIFACTS}\Ghosium-Browser-Setup-v${GHOSIUM_VERSION}.exe"
 InstallDir "$LOCALAPPDATA\Programs\Ghosium Browser"
 RequestExecutionLevel user
-SetCompressor /SOLID lzma
-SetCompressorDictSize 64
+
+; zlib intentionally favors low-memory/faster installation on weaker PCs.
+; Chromium already contains many internally compressed resources, so using a
+; very large solid-LZMA dictionary gives poor build/install trade-offs here.
+SetCompressor zlib
+
 ShowInstDetails show
 ShowUninstDetails show
 

@@ -36,20 +36,69 @@ impl PrivacyEngine {
 pub const DOCUMENT_START_SCRIPT: &str = r#"
 (() => {
   'use strict';
-  const deny = () => Promise.reject(new DOMException('Blocked by Ghost Browser privacy policy', 'NotAllowedError'));
-  try { Object.defineProperty(Navigator.prototype, 'doNotTrack', { get: () => '1', configurable: false }); } catch (_) {}
-  try { Object.defineProperty(Navigator.prototype, 'globalPrivacyControl', { get: () => true, configurable: false }); } catch (_) {}
-  try { Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', { get: () => 4, configurable: false }); } catch (_) {}
-  try { if ('deviceMemory' in Navigator.prototype) Object.defineProperty(Navigator.prototype, 'deviceMemory', { get: () => 8, configurable: false }); } catch (_) {}
+
+  const deny = () => Promise.reject(
+    new DOMException('Blocked by Ghost Browser privacy policy', 'NotAllowedError')
+  );
+
   try {
-    const BlockedRTC = class { constructor() { throw new DOMException('WebRTC disabled by Ghost Browser', 'NotAllowedError'); } };
+    Object.defineProperty(Navigator.prototype, 'doNotTrack', {
+      get: () => '1',
+      configurable: false
+    });
+  } catch (_) {}
+
+  try {
+    Object.defineProperty(Navigator.prototype, 'globalPrivacyControl', {
+      get: () => true,
+      configurable: false
+    });
+  } catch (_) {}
+
+  try {
+    const BlockedRTC = class {
+      constructor() {
+        throw new DOMException('WebRTC disabled by Ghost Browser', 'NotAllowedError');
+      }
+    };
     Object.defineProperty(window, 'RTCPeerConnection', { value: BlockedRTC, configurable: false });
     Object.defineProperty(window, 'webkitRTCPeerConnection', { value: BlockedRTC, configurable: false });
   } catch (_) {}
+
   try {
     if (navigator.mediaDevices) {
       Object.defineProperty(navigator.mediaDevices, 'getUserMedia', { value: deny, configurable: false });
       Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', { value: deny, configurable: false });
+    }
+  } catch (_) {}
+
+  try {
+    if ('bluetooth' in navigator && navigator.bluetooth) {
+      Object.defineProperty(navigator.bluetooth, 'requestDevice', { value: deny, configurable: false });
+    }
+  } catch (_) {}
+
+  try {
+    if ('usb' in navigator && navigator.usb) {
+      Object.defineProperty(navigator.usb, 'requestDevice', { value: deny, configurable: false });
+    }
+  } catch (_) {}
+
+  try {
+    if ('serial' in navigator && navigator.serial) {
+      Object.defineProperty(navigator.serial, 'requestPort', { value: deny, configurable: false });
+    }
+  } catch (_) {}
+
+  try {
+    if ('hid' in navigator && navigator.hid) {
+      Object.defineProperty(navigator.hid, 'requestDevice', { value: deny, configurable: false });
+    }
+  } catch (_) {}
+
+  try {
+    if ('Notification' in window && typeof Notification.requestPermission === 'function') {
+      Object.defineProperty(Notification, 'requestPermission', { value: deny, configurable: false });
     }
   } catch (_) {}
 })();

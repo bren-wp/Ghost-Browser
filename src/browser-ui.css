@@ -1,0 +1,45 @@
+.tabs {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  flex: 0 1 180px;
+  min-width: 92px;
+}
+
+.tab.discarded:not(.active) {
+  opacity: 0.72;
+}
+
+.tab.discarded .tab-favicon {
+  color: #7f8898;
+}
+
+.menu-item:disabled {
+  opacity: 0.42;
+  pointer-events: none;
+}
+
+.menu-status {
+  margin: 2px 8px 7px;
+  padding: 8px 9px;
+  border-radius: 9px;
+  border: 1px solid rgba(142, 167, 255, 0.11);
+  background: rgba(142, 167, 255, 0.055);
+  color: #8f99aa;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+@media (max-width: 900px) {
+  .tab {
+    min-width: 78px;
+  }
+}

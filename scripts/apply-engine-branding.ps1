@@ -46,7 +46,7 @@ function Replace-RequiredLiteral {
 
   $text = [IO.File]::ReadAllText($Path)
   if (!$text.Contains($OldValue)) {
-    throw "Expected source literal was not found in $Path: $OldValue"
+    throw "Expected source literal was not found in ${Path}: $OldValue"
   }
   $updated = $text.Replace($OldValue, $NewValue)
   [IO.File]::WriteAllText($Path, $updated, [Text.UTF8Encoding]::new($false))

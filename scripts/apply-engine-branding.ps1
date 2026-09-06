@@ -102,6 +102,7 @@ $brandingFile = Join-Path $sourceRootResolved 'chrome/app/theme/chromium/BRANDIN
 $managedProfileNotice = Join-Path $sourceRootResolved 'chrome/browser/resources/signin/managed_user_profile_notice/managed_user_profile_notice_value_prop.html.ts'
 $contextualToolbarLogo = Join-Path $sourceRootResolved 'chrome/browser/resources/contextual_tasks/top_toolbar_logo.html.ts'
 $sharedDarkLogo = Join-Path $sourceRootResolved 'ui/webui/resources/images/chrome_logo_dark.svg'
+$searchPrepopulateData = Join-Path $sourceRootResolved 'components/search_engines/template_url_prepopulate_data.cc'
 
 foreach ($required in @(
   $chromiumStrings,
@@ -112,7 +113,8 @@ foreach ($required in @(
   $brandingFile,
   $managedProfileNotice,
   $contextualToolbarLogo,
-  $sharedDarkLogo
+  $sharedDarkLogo,
+  $searchPrepopulateData
 )) {
   if (!(Test-Path $required -PathType Leaf)) {
     throw "Pinned source layout changed; expected file missing: $required"
@@ -172,6 +174,14 @@ if ($LASTEXITCODE -ne 0) {
   throw 'Ghosium first-party product link routing failed.'
 }
 
+# Install Ghosium Search as the distribution fallback in Chromium's owned
+# search-engine layer. This intentionally does not edit third_party engine data
+# and does not use enterprise policy to force the provider.
+& (Join-Path $PSScriptRoot 'rewrite-engine-default-search.ps1') -SourceRoot $sourceRootResolved
+if ($LASTEXITCODE -ne 0) {
+  throw 'Ghosium Search source integration failed.'
+}
+
 # Replace product logos used by current-channel-logo, Windows resources, shared
 # dark-mode WebUI, tiles, app shortcuts and vector icon consumers.
 $brandSvg = Join-Path $repoRoot 'engine/branding/ghosium-mark.svg'
@@ -219,4 +229,4 @@ if ($LASTEXITCODE -ne 0) {
   throw 'Ghosium full-source verification failed after branding.'
 }
 
-Write-Host 'Source-level Ghosium branding, first-party links, locale strings and product icons applied successfully.'
+Write-Host 'Source-level Ghosium branding, Search, first-party links, locale strings and product icons applied successfully.'

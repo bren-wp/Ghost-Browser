@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Generate deterministic Ghosium product PNG/ICO assets for a Chromium source checkout.
+"""Generate deterministic Ghosium product PNG/ICO assets.
 
-Uses only the Python standard library so full-source builders do not need Pillow,
+The default mode writes Chromium source-tree brand resources. ``--icon-only``
+can generate the same canonical multi-resolution ICO for the native launcher,
+Setup and Portable executables without storing duplicate binary assets in Git.
+
+Uses only the Python standard library so builders do not need Pillow,
 ImageMagick or browser-runtime dependencies.
 """
 
@@ -132,8 +136,31 @@ def write(path: Path, data: bytes) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("source_root", type=Path)
+    parser.add_argument("source_root", type=Path, nargs="?")
+    parser.add_argument(
+        "--icon-output",
+        type=Path,
+        help="Optional path for the canonical multi-resolution Ghosium ICO.",
+    )
+    parser.add_argument(
+        "--icon-only",
+        action="store_true",
+        help="Generate only --icon-output and skip Chromium source-tree assets.",
+    )
     args = parser.parse_args()
+
+    icon = ico_bytes()
+    if args.icon_output is not None:
+        write(args.icon_output.resolve(), icon)
+
+    if args.icon_only:
+        if args.icon_output is None:
+            parser.error("--icon-only requires --icon-output")
+        return 0
+
+    if args.source_root is None:
+        parser.error("source_root is required unless --icon-only is used")
+
     root = args.source_root.resolve()
 
     png_targets = {
@@ -154,7 +181,6 @@ def main() -> int:
     for rel, size in png_targets.items():
         write(root / rel, png_bytes(size))
 
-    icon = ico_bytes()
     for rel in (
         "chrome/app/theme/chromium/win/chromium.ico",
         "chrome/app/theme/chromium/win/chromium_doc.ico",

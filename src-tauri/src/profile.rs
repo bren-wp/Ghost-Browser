@@ -115,7 +115,9 @@ fn profile_path() -> PathBuf {
     let base = env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(env::temp_dir);
-    base.join("Ghost Browser").join("Profile").join("profile.json")
+    base.join("Ghosium Browser")
+        .join("Profile")
+        .join("profile.json")
 }
 
 fn sanitize_text(input: &str, field: &str) -> Result<String, String> {
@@ -457,7 +459,11 @@ impl ProfileStore {
         if data.mail_accounts.len() >= MAX_MAIL_ACCOUNTS {
             return Err("Dosegnut je limit mail računa".into());
         }
-        if data.mail_accounts.iter().any(|item| item.email.eq_ignore_ascii_case(&email)) {
+        if data
+            .mail_accounts
+            .iter()
+            .any(|item| item.email.eq_ignore_ascii_case(&email))
+        {
             return Err("Ovaj mail račun već postoji".into());
         }
 
@@ -569,7 +575,7 @@ mod tests {
 
     fn temp_profile_path(name: &str) -> PathBuf {
         env::temp_dir()
-            .join(format!("ghost-browser-{name}-{}", Uuid::new_v4()))
+            .join(format!("ghosium-browser-{name}-{}", Uuid::new_v4()))
             .join("profile.json")
     }
 
@@ -578,7 +584,7 @@ mod tests {
             version: PROFILE_VERSION,
             bookmarks: vec![Bookmark {
                 id: Uuid::new_v4().to_string(),
-                title: "Ghost test".into(),
+                title: "Ghosium test".into(),
                 url: "https://example.com/".into(),
                 created_at: 1,
             }],
@@ -617,7 +623,7 @@ mod tests {
         assert!(path.exists());
         assert!(!backup.exists());
 
-        let _ = fs::remove_dir_all(parent.parent().unwrap_or(parent));
+        let _ = fs::remove_dir_all(parent);
     }
 
     #[test]
@@ -634,6 +640,6 @@ mod tests {
         assert!(path.exists());
         assert!(!backup.exists());
 
-        let _ = fs::remove_dir_all(parent.parent().unwrap_or(parent));
+        let _ = fs::remove_dir_all(parent);
     }
 }

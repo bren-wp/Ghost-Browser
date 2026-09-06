@@ -57,6 +57,18 @@ jobs:
             }
           }
 
+      - name: Require NSIS warnings as errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in installer/ghosium.nsi installer/portable.nsi; do
+            count="$(grep -Fc '!pragma warning error all' "$script")"
+            if [ "$count" -ne 1 ]; then
+              echo "$script must contain exactly one '!pragma warning error all' directive." >&2
+              exit 1
+            fi
+          done
+
       - name: Verify deterministic RC-compatible Ghosium Windows icon
         shell: bash
         run: |

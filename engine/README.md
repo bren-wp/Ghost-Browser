@@ -71,6 +71,22 @@ A persistent builder should set `GHOSIUM_SOURCE_WORK` to a dedicated Chromium ch
 
 Do not switch `is_chrome_branded` or `is_official_build` to true and do not inject proprietary Google API credentials as a shortcut for product integration.
 
+## Windows uninstall architecture
+
+Ghosium must be removable normally from Windows **Installed apps / Apps & features** and through the standard registered uninstall command, but it must not ship a separate `uninstall.exe`.
+
+The source build keeps Chromium's established installer architecture:
+
+- `mini_installer.exe` performs installation/upgrade packaging;
+- the installed version contains its normal `Installer\setup.exe` payload;
+- Windows uninstall registry entries point to that setup executable with the normal `--uninstall` arguments;
+- `setup.exe` dispatches to Chromium's `UninstallProduct(...)` implementation;
+- user and system-level uninstall flows remain supported according to the selected install mode.
+
+Do not add `uninstall.exe`, `Ghosium-Uninstall.exe`, `Ghosium-Browser-Uninstall.exe`, or another standalone uninstaller. `verify-engine-build-output.ps1` enforces this and records the setup-based uninstall mechanism in `GHOSIUM-SOURCE-BUILD.json`.
+
+This requirement does not mean that `setup.exe` should be removed. `setup.exe` is an internal installer component used for install, upgrade, repair and uninstall operations; it is not a separately distributed Ghosium uninstaller.
+
 ## Manual workstation flow
 
 From a Ghosium repository checkout with `depot_tools` on `PATH`:
@@ -94,7 +110,7 @@ Finally verify product metadata, required runtime outputs, GN invariants, third-
 ./scripts/verify-engine-build-output.ps1 -SourceRoot C:\src\ghosium-chromium\src -OutDir out/Ghosium
 ```
 
-The verifier requires the source-built `chrome.exe` to identify itself as `Ghosium Browser` with publisher/company metadata `Brendigo`. It also requires `mini_installer.exe`, `chrome.7z`, setup/runtime files and the pinned `args.gn` before producing `GHOSIUM-SOURCE-BUILD.json`.
+The verifier requires the source-built `chrome.exe` to identify itself as `Ghosium Browser` with publisher/company metadata `Brendigo`. It also requires `mini_installer.exe`, `chrome.7z`, setup/runtime files and the pinned `args.gn`, verifies that the setup-based uninstall path is intact, rejects a standalone uninstaller, and then produces `GHOSIUM-SOURCE-BUILD.json`.
 
 ## GitHub source-build workflow
 
@@ -104,6 +120,8 @@ The verifier requires the source-built `chrome.exe` to identify itself as `Ghosi
 - `Ghosium-Browser-Source-Runtime.7z`;
 - `GHOSIUM-SOURCE-BUILD.json`;
 - `SHA256SUMS.txt`.
+
+No standalone uninstall executable is uploaded or released. Uninstall support is provided by the installed setup component registered with Windows.
 
 The ordinary snapshot-based release workflow stays available during migration. It must not be removed until at least one source-built Windows artifact passes the binary verifier and the browser smoke/security checks. After that gate is met, the source-built installer becomes the candidate for the normal release path.
 
@@ -115,7 +133,7 @@ A full-source build is not release-ready merely because compilation succeeds. Pr
 2. successful `apply-engine-branding.ps1` and `verify-engine-fork.ps1`;
 3. clean `gn gen` using the reviewed Windows x64 args;
 4. successful `chrome` and `mini_installer` targets;
-5. `verify-engine-build-output.ps1` passing on the resulting binaries;
+5. `verify-engine-build-output.ps1` passing on the resulting binaries, including setup-based uninstall support with no standalone uninstaller;
 6. sandbox, certificate/TLS, extension, startup, accessibility, update and low-memory smoke tests;
 7. preservation of upstream and third-party license/attribution material;
 8. signed release artifacts and verified update metadata before public distribution.

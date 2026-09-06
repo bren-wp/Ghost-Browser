@@ -1,4 +1,5 @@
 mod browser;
+mod cleanup;
 mod mail;
 mod privacy;
 mod profile;
@@ -30,7 +31,7 @@ pub fn run() {
             browser::go_back,
             browser::go_forward,
             browser::sync_viewport,
-            browser::clear_browsing_data,
+            cleanup::clear_browsing_data,
             browser::discard_inactive_tabs,
             browser::browser_stats,
             profile::list_bookmarks,

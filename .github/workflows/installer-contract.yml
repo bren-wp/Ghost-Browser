@@ -52,6 +52,10 @@ jobs:
             echo 'installer/ghosium.nsi must use the setup executable for uninstall instead of generating a standalone uninstaller.' >&2
             exit 1
           fi
+          if printf '%s\n' "$active_nsi" | grep -nEi 'cmd\.exe|powershell(\.exe)?|rmdir[[:space:]]+/'; then
+            echo 'Uninstall cleanup must not depend on a shell command string.' >&2
+            exit 1
+          fi
 
       - name: Verify same-setup uninstall registration
         shell: bash
@@ -61,13 +65,19 @@ jobs:
 
           required=(
             '!define INSTALLED_SETUP "Installer\\Ghosium-Browser-Setup.exe"'
+            '!define CLEANUP_SETUP "$TEMP\\Brendigo\\Ghosium Browser Cleanup\\Ghosium-Browser-Setup.exe"'
             '${GetOptions} $R0 "/UNINSTALL" $R1'
+            '${GetOptions} $R0 "/CLEANUP" $R1'
             'CopyFiles /SILENT "$EXEPATH" "$INSTDIR\\${INSTALLED_SETUP}"'
+            'CopyFiles /SILENT "$EXEPATH" "${CLEANUP_SETUP}"'
+            'Exec '\''"${CLEANUP_SETUP}" /CLEANUP'\'''
+            'Exec '\''"${CLEANUP_SETUP}" /CLEANUP /S'\'''
+            'RMDir /r /REBOOTOK "$INSTDIR"'
+            'Delete /REBOOTOK "$EXEPATH"'
             '"UninstallString"'
             '${INSTALLED_SETUP}$\\" /UNINSTALL'
             '"QuietUninstallString"'
             '${INSTALLED_SETUP}$\\" /UNINSTALL /S'
-            'Call RemoveGhosium'
           )
 
           for needle in "${required[@]}"; do

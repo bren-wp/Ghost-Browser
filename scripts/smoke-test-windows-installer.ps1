@@ -72,8 +72,12 @@ try {
       !$quietUninstallString.Contains('/S')) {
     throw "QuietUninstallString is invalid: '$quietUninstallString'"
   }
+  if ($quietUninstallString.IndexOf('/S', [StringComparison]::Ordinal) -gt
+      $quietUninstallString.IndexOf('/UNINSTALL', [StringComparison]::Ordinal)) {
+    throw "QuietUninstallString must place /S before /UNINSTALL so NSIS enters silent mode before custom switch handling: '$quietUninstallString'"
+  }
 
-  $remove = Start-Process -FilePath $installedSetup -ArgumentList @('/UNINSTALL', '/S') -Wait -PassThru
+  $remove = Start-Process -FilePath $installedSetup -ArgumentList @('/S', '/UNINSTALL') -Wait -PassThru
   if ($remove.ExitCode -ne 0) {
     throw "Ghosium same-setup uninstall launcher failed with exit code $($remove.ExitCode)"
   }

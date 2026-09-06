@@ -76,14 +76,10 @@ fn bytes_text(value: Option<&[u8]>) -> String {
         .unwrap_or_default()
 }
 
-fn address_text(envelope: &imap::types::Envelope<'_>) -> String {
-    let Some(address) = envelope.from.as_ref().and_then(|items| items.first()) else {
-        return String::new();
-    };
-
-    let name = bytes_text(address.name.as_deref());
-    let mailbox = bytes_text(address.mailbox.as_deref());
-    let host = bytes_text(address.host.as_deref());
+fn address_text(name: Option<&[u8]>, mailbox: Option<&[u8]>, host: Option<&[u8]>) -> String {
+    let name = bytes_text(name);
+    let mailbox = bytes_text(mailbox);
+    let host = bytes_text(host);
     let email = if !mailbox.is_empty() && !host.is_empty() {
         format!("{mailbox}@{host}")
     } else {
@@ -190,10 +186,23 @@ fn fetch_inbox_blocking(
             .flags()
             .iter()
             .any(|flag| matches!(flag, imap::types::Flag::Seen));
+        let from = envelope
+            .from
+            .as_ref()
+            .and_then(|items| items.first())
+            .map(|address| {
+                address_text(
+                    address.name.as_deref(),
+                    address.mailbox.as_deref(),
+                    address.host.as_deref(),
+                )
+            })
+            .unwrap_or_default();
+
         summaries.push(MailSummary {
             uid,
             subject: bytes_text(envelope.subject.as_deref()),
-            from: address_text(envelope),
+            from,
             date: bytes_text(envelope.date.as_deref()),
             seen,
         });

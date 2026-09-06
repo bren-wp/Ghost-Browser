@@ -1,4 +1,5 @@
 mod browser;
+mod mail;
 mod privacy;
 mod profile;
 mod search;
@@ -41,7 +42,12 @@ pub fn run() {
             vault::vault_list,
             vault::vault_save,
             vault::vault_delete,
-            vault::vault_fill
+            vault::vault_fill,
+            mail::mail_list_accounts,
+            mail::mail_add_account,
+            mail::mail_delete_account,
+            mail::mail_fetch_inbox,
+            mail::mail_send
         ])
         .run(tauri::generate_context!())
         .expect("Ghost Browser runtime failure");

@@ -12,7 +12,7 @@ Unicode true
   !error "GHOSIUM_ARTIFACTS must point to the release artifact directory"
 !endif
 !ifndef GHOSIUM_ICON
-  !error "GHOSIUM_ICON must point to the generated Ghosium ICO"
+  !define GHOSIUM_ICON "${__FILEDIR__}\..\ghosium.ico"
 !endif
 
 !define PRODUCT_NAME "Ghosium Browser"

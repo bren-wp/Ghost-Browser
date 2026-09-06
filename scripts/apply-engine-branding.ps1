@@ -25,7 +25,7 @@ function Set-GritMessage {
 
   $text = [IO.File]::ReadAllText($Path)
   $escapedId = [regex]::Escape($MessageId)
-  $pattern = "(?s)(<message\\s+[^>]*name=[`\"']$escapedId[`\"'][^>]*>)(.*?)(</message>)"
+  $pattern = '(?s)(<message\s+[^>]*name="' + $escapedId + '"[^>]*>)(.*?)(</message>)'
   $matches = [regex]::Matches($text, $pattern)
   if ($matches.Count -lt 1) {
     throw "Expected GRIT message was not found: $MessageId in $Path"

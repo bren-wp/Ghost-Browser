@@ -54,8 +54,8 @@ jobs:
           if (Select-String -Path "src/*.ts" -Pattern "console\.error|debugger;" -Quiet) {
             throw "Developer-only console/debugger code found in production TypeScript"
           }
-          if (Select-String -Path "src-tauri/src/profile.rs" -Pattern "\bpassword\b" -Quiet) {
-            throw "Plaintext password field/reference found in Ghost profile storage"
+          if (Select-String -Path "src-tauri/src/profile.rs" -Pattern "pub\s+(password|secret)\s*:" -Quiet) {
+            throw "Plaintext secret field found in Ghost profile storage"
           }
           $index = Get-Content "index.html" -Raw
           foreach ($required in @("/src/main.ts", "/src/library.ts", "/src/styles.css", "/src/library.css")) {

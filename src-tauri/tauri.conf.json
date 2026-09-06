@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Ghost Browser",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "identifier": "com.brendigo.ghostbrowser",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -14,7 +14,10 @@
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'",
       "freezePrototype": true,
-      "assetProtocol": { "enable": false, "scope": [] }
+      "assetProtocol": {
+        "enable": false,
+        "scope": []
+      }
     },
     "windows": [
       {
@@ -39,10 +42,12 @@
     "publisher": "Brendigo",
     "copyright": "Copyright © 2026 Brendigo",
     "category": "Productivity",
-    "shortDescription": "Privacy-first Windows web browser",
-    "longDescription": "Ghost Browser is a privacy-first Windows browser powered by Rust, Tauri and WebView2 with built-in request filtering and zero application telemetry.",
+    "shortDescription": "Private Windows web browser",
+    "longDescription": "Ghost Browser is a privacy-focused Windows browser with strict tracking prevention, local request filtering, memory saving and no Ghost application telemetry.",
     "windows": {
-      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
+      "webviewInstallMode": {
+        "type": "skip"
+      },
       "nsis": {
         "installMode": "currentUser",
         "displayLanguageSelector": false,

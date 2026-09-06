@@ -36,18 +36,22 @@ impl PrivacyEngine {
 pub const DOCUMENT_START_SCRIPT: &str = r#"
 (() => {
   'use strict';
-  const deny = () => Promise.reject(new DOMException('Blocked by Ghost Browser privacy policy', 'NotAllowedError'));
-  try { Object.defineProperty(Navigator.prototype, 'doNotTrack', { get: () => '1', configurable: false }); } catch (_) {}
-  try { Object.defineProperty(Navigator.prototype, 'globalPrivacyControl', { get: () => true, configurable: false }); } catch (_) {}
+
   try {
-    const BlockedRTC = class { constructor() { throw new DOMException('WebRTC disabled by Ghost Browser', 'NotAllowedError'); } };
-    Object.defineProperty(window, 'RTCPeerConnection', { value: BlockedRTC, configurable: false });
-    Object.defineProperty(window, 'webkitRTCPeerConnection', { value: BlockedRTC, configurable: false });
+    if ('serial' in navigator && navigator.serial) {
+      Object.defineProperty(navigator.serial, 'requestPort', { value: deny, configurable: false });
+    }
   } catch (_) {}
+
   try {
-    if (navigator.mediaDevices) {
-      Object.defineProperty(navigator.mediaDevices, 'getUserMedia', { value: deny, configurable: false });
-      Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', { value: deny, configurable: false });
+    if ('hid' in navigator && navigator.hid) {
+      Object.defineProperty(navigator.hid, 'requestDevice', { value: deny, configurable: false });
+    }
+  } catch (_) {}
+
+  try {
+    if ('Notification' in window && typeof Notification.requestPermission === 'function') {
+      Object.defineProperty(Notification, 'requestPermission', { value: deny, configurable: false });
     }
   } catch (_) {}
 })();

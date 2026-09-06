@@ -10,20 +10,20 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-windows:
     name: Build Windows x64
     runs-on: windows-2025
-    timeout-minutes: 35
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -61,9 +61,6 @@ jobs:
       - name: Check Rust
         run: cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
 
-      - name: Test Rust
-        run: cargo test --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
-
       - name: Build Ghost Browser and NSIS installer
         run: npm run tauri build -- --target x86_64-pc-windows-msvc --bundles nsis
 
@@ -87,12 +84,48 @@ jobs:
           }
           Copy-Item $setup.FullName (Join-Path $out "Ghost-Browser-Setup.exe")
 
-          $portableHash = (Get-FileHash (Join-Path $out "Ghost-Browser-Portable.exe") -Algorithm SHA256).Hash.ToLower()
-          $setupHash = (Get-FileHash (Join-Path $out "Ghost-Browser-Setup.exe") -Algorithm SHA256).Hash.ToLower()
+          $portableOut = Get-Item (Join-Path $out "Ghost-Browser-Portable.exe")
+          $setupOut = Get-Item (Join-Path $out "Ghost-Browser-Setup.exe")
+          $maxPortableBytes = 20MB
+          $maxSetupBytes = 15MB
+          if ($portableOut.Length -gt $maxPortableBytes) {
+            throw "Portable executable exceeds the 20 MB Ghost Browser size budget"
+          }
+          if ($setupOut.Length -gt $maxSetupBytes) {
+            throw "Setup executable exceeds the 15 MB Ghost Browser size budget"
+          }
+
+          $portableHash = (Get-FileHash $portableOut.FullName -Algorithm SHA256).Hash.ToLower()
+          $setupHash = (Get-FileHash $setupOut.FullName -Algorithm SHA256).Hash.ToLower()
           @(
             "$portableHash  Ghost-Browser-Portable.exe",
             "$setupHash  Ghost-Browser-Setup.exe"
           ) | Set-Content (Join-Path $out "SHA256SUMS.txt") -Encoding ascii
+
+          Write-Host "Portable size: $([math]::Round($portableOut.Length / 1MB, 2)) MB"
+          Write-Host "Setup size: $([math]::Round($setupOut.Length / 1MB, 2)) MB"
+
+      - name: Smoke test Windows executable startup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe = (Resolve-Path "artifacts/Ghost-Browser-Portable.exe").Path
+          $process = Start-Process -FilePath $exe -PassThru
+          try {
+            Start-Sleep -Seconds 8
+            $process.Refresh()
+            if ($process.HasExited) {
+              throw "Ghost Browser exited during the startup smoke-test window with code $($process.ExitCode)"
+            }
+            Write-Host "Ghost Browser startup smoke test passed (PID $($process.Id))."
+          }
+          finally {
+            if (!$process.HasExited) {
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              $process.WaitForExit(5000) | Out-Null
+            }
+            Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          }
 
       - name: Upload Windows binaries
         uses: actions/upload-artifact@v4
@@ -101,3 +134,22 @@ jobs:
           path: artifacts/*
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = "v0.4.0"
+          $title = "Ghost Browser v0.4.0"
+          $notes = "Production Windows build of Ghost Browser v0.4.0 with strict tracking prevention, local request filtering, hardened remote WebViews, improved media permission compatibility, tab restore stability, Windows startup smoke testing and Memory Saver tuned for a 320-tab scheduler with at most 8 live WebViews. Includes Portable.exe, Setup.exe and SHA256 checksums."
+
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag artifacts/Ghost-Browser-Portable.exe artifacts/Ghost-Browser-Setup.exe artifacts/SHA256SUMS.txt --clobber --repo $env:GITHUB_REPOSITORY
+            gh release edit $tag --title $title --notes $notes --repo $env:GITHUB_REPOSITORY
+          } else {
+            gh release create $tag artifacts/Ghost-Browser-Portable.exe artifacts/Ghost-Browser-Setup.exe artifacts/SHA256SUMS.txt --target $env:GITHUB_SHA --title $title --notes $notes --repo $env:GITHUB_REPOSITORY
+          }

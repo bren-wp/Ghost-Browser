@@ -37,6 +37,7 @@ jobs:
             'scripts/rebrand-engine-locales.ps1',
             'scripts/rewrite-engine-product-links.ps1',
             'scripts/rewrite-engine-default-search.ps1',
+            'scripts/rewrite-engine-windows-identity.ps1',
             'scripts/verify-engine-locales.ps1',
             'scripts/verify-engine-fork.ps1',
             'scripts/configure-engine-build.ps1',
@@ -189,6 +190,7 @@ jobs:
           /chrome/app/resources/
           /chrome/app/theme/chromium/
           /chrome/common/url_constants.h
+          /chrome/install_static/chromium_install_modes.h
           /chrome/browser/ui/chrome_pages.cc
           /chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome_page_handler.cc
           /chrome/browser/ui/webui/extensions/extensions_ui.cc
@@ -224,6 +226,11 @@ jobs:
           grep -F 'Ghosium Search' "$CHROMIUM_SRC/components/search_engines/template_url_prepopulate_data.cc"
           grep -F 'https://search.ghosium.com/?q={searchTerms}' "$CHROMIUM_SRC/components/search_engines/template_url_prepopulate_data.cc"
           grep -F 'prepopulate_id = 1101' "$CHROMIUM_SRC/components/search_engines/template_url_prepopulate_data.cc"
+          grep -F 'kCompanyPathName[] = L"Brendigo"' "$CHROMIUM_SRC/chrome/install_static/chromium_install_modes.h"
+          grep -F 'kProductPathName[] = L"Ghosium"' "$CHROMIUM_SRC/chrome/install_static/chromium_install_modes.h"
+          grep -F '.base_app_name = L"Ghosium Browser"' "$CHROMIUM_SRC/chrome/install_static/chromium_install_modes.h"
+          grep -F '.browser_prog_id_prefix = L"GhosiumHTM"' "$CHROMIUM_SRC/chrome/install_static/chromium_install_modes.h"
+          grep -F '.direct_launch_url_scheme = "ghosium"' "$CHROMIUM_SRC/chrome/install_static/chromium_install_modes.h"
           if git -C "$CHROMIUM_SRC" status --porcelain=v1 -- third_party | grep -q .; then
             echo "third_party was modified" >&2
             exit 1

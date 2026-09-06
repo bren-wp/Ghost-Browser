@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { setRendererOverlay } from "./overlay";
 
 interface Bookmark {
   id: string;
@@ -131,15 +132,16 @@ function activeTab() {
 }
 
 async function setRendererHidden(hidden: boolean): Promise<void> {
-  await invoke("set_overlay_open", { open: hidden });
+  await setRendererOverlay("library", hidden);
 }
 
-function closeChromePanels(): void {
+async function closeChromePanels(): Promise<void> {
   document.querySelector("#privacy-panel")?.classList.remove("open");
   const menu = document.querySelector("#app-menu");
   menu?.classList.remove("open");
   menu?.setAttribute("aria-hidden", "true");
   document.querySelector("#menu")?.setAttribute("aria-expanded", "false");
+  await setRendererOverlay("chrome", false);
 }
 
 async function closeDrawer(): Promise<void> {
@@ -152,7 +154,7 @@ async function closeDrawer(): Promise<void> {
 async function openDrawer(section: Section): Promise<void> {
   if (!drawer || !content || !titleEl) return;
   syncActiveTabFromChrome();
-  closeChromePanels();
+  await closeChromePanels();
   currentSection = section;
   titleEl.textContent = {
     favorites: "Favoriti",

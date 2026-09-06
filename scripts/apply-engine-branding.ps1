@@ -103,6 +103,7 @@ $managedProfileNotice = Join-Path $sourceRootResolved 'chrome/browser/resources/
 $contextualToolbarLogo = Join-Path $sourceRootResolved 'chrome/browser/resources/contextual_tasks/top_toolbar_logo.html.ts'
 $sharedDarkLogo = Join-Path $sourceRootResolved 'ui/webui/resources/images/chrome_logo_dark.svg'
 $searchPrepopulateData = Join-Path $sourceRootResolved 'components/search_engines/template_url_prepopulate_data.cc'
+$windowsInstallModes = Join-Path $sourceRootResolved 'chrome/install_static/chromium_install_modes.h'
 
 foreach ($required in @(
   $chromiumStrings,
@@ -114,7 +115,8 @@ foreach ($required in @(
   $managedProfileNotice,
   $contextualToolbarLogo,
   $sharedDarkLogo,
-  $searchPrepopulateData
+  $searchPrepopulateData,
+  $windowsInstallModes
 )) {
   if (!(Test-Path $required -PathType Leaf)) {
     throw "Pinned source layout changed; expected file missing: $required"
@@ -182,6 +184,13 @@ if ($LASTEXITCODE -ne 0) {
   throw 'Ghosium Search source integration failed.'
 }
 
+# Rebrand Windows install paths, Default Programs identities, document ProgIDs
+# and direct-launch scheme without renaming internal Chromium build targets.
+& (Join-Path $PSScriptRoot 'rewrite-engine-windows-identity.ps1') -SourceRoot $sourceRootResolved
+if ($LASTEXITCODE -ne 0) {
+  throw 'Ghosium Windows install identity integration failed.'
+}
+
 # Replace product logos used by current-channel-logo, Windows resources, shared
 # dark-mode WebUI, tiles, app shortcuts and vector icon consumers.
 $brandSvg = Join-Path $repoRoot 'engine/branding/ghosium-mark.svg'
@@ -229,4 +238,4 @@ if ($LASTEXITCODE -ne 0) {
   throw 'Ghosium full-source verification failed after branding.'
 }
 
-Write-Host 'Source-level Ghosium branding, Search, first-party links, locale strings and product icons applied successfully.'
+Write-Host 'Source-level Ghosium branding, Search, Windows identity, first-party links, locale strings and product icons applied successfully.'

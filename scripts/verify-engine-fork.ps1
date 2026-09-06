@@ -16,6 +16,7 @@ $brandDarkSvgPath = Join-Path $repoRoot 'engine/branding/ghosium-mark-dark.svg'
 $productVectorPath = Join-Path $repoRoot 'engine/branding/vector/product.icon'
 $productRefreshVectorPath = Join-Path $repoRoot 'engine/branding/vector/product_refresh.icon'
 $assetGeneratorPath = Join-Path $repoRoot 'scripts/generate-engine-brand-assets.py'
+$defaultSearchRewritePath = Join-Path $repoRoot 'scripts/rewrite-engine-default-search.ps1'
 
 foreach ($required in @(
   $configPath,
@@ -26,7 +27,8 @@ foreach ($required in @(
   $brandDarkSvgPath,
   $productVectorPath,
   $productRefreshVectorPath,
-  $assetGeneratorPath
+  $assetGeneratorPath,
+  $defaultSearchRewritePath
 )) {
   if (!(Test-Path $required -PathType Leaf)) {
     throw "Required Ghosium fork file is missing: $required"
@@ -172,6 +174,7 @@ if ($SourceRoot) {
     'chrome/browser/resources/contextual_tasks/top_toolbar_logo.html.ts',
     'chrome/browser/resources/signin/managed_user_profile_notice/managed_user_profile_notice_value_prop.html.ts',
     'ui/webui/resources/images/chrome_logo_dark.svg',
+    'components/search_engines/template_url_prepopulate_data.cc',
     'components/vector_icons/chromium/product.icon',
     'components/vector_icons/chromium/product_refresh.icon'
   )
@@ -224,6 +227,26 @@ if ($SourceRoot) {
   }
   if ($urlConstants.Contains('https://support.google.com/chrome?p=help&ctx=')) {
     throw 'Legacy Chromium/Chrome Help URLs remain in Ghosium product routing.'
+  }
+
+  $searchSource = Get-Content (Join-Path $resolvedSourceRoot 'components/search_engines/template_url_prepopulate_data.cc') -Raw
+  foreach ($requiredSearchIdentity in @(
+    'Ghosium Search',
+    'u"search.ghosium.com"',
+    'https://search.ghosium.com/?q={searchTerms}',
+    'https://search.ghosium.com/api/suggest.php?q={searchTerms}',
+    'prepopulate_id = 1101',
+    '9e993bd9-c256-42d7-a1b1-000000001101'
+  )) {
+    if (!$searchSource.Contains($requiredSearchIdentity)) {
+      throw "Ghosium Search source integration is missing: $requiredSearchIdentity"
+    }
+  }
+  if ($searchSource -match '(?s)Ghosium Search.*?send_x_geo_header\s*=\s*true') {
+    throw 'Ghosium Search must not enable the privacy-sensitive X-Geo header.'
+  }
+  if ($searchSource.Contains('return FindPrepopulatedEngineInternal(prefs, regional_prepopulated_engines,`n                                        google.id')) {
+    throw 'Upstream Google fallback remains active instead of Ghosium Search.'
   }
 
   $productSvg = Get-Content (Join-Path $resolvedSourceRoot 'chrome/app/theme/chromium/product_logo.svg') -Raw

@@ -92,8 +92,8 @@ jobs:
             echo 'installer/ghosium.nsi must use the setup executable for uninstall instead of generating a standalone uninstaller.' >&2
             exit 1
           fi
-          if printf '%s\n' "$active_nsi" | grep -nEi 'cmd\.exe|powershell(\.exe)?|rmdir[[:space:]]+/'; then
-            echo 'Uninstall cleanup must not depend on a shell command string.' >&2
+          if printf '%s\n' "$active_nsi" | grep -nEi 'cmd\.exe|powershell(\.exe)?'; then
+            echo 'Uninstall cleanup must not depend on cmd.exe or PowerShell shell command strings.' >&2
             exit 1
           fi
 

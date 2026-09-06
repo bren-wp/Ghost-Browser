@@ -137,6 +137,7 @@ jobs:
           /chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome_page_handler.cc
           /chrome/browser/ui/webui/extensions/extensions_ui.cc
           /chrome/browser/resources/settings/about_page/about_page.ts
+          /chrome/browser/resources/signin/managed_user_profile_notice/managed_user_profile_notice_value_prop.html.ts
           /components/components_chromium_strings.grd
           /components/strings/
           /components/vector_icons/chromium/
@@ -157,6 +158,8 @@ jobs:
         run: |
           set -euo pipefail
           git -C "$CHROMIUM_SRC" diff --check
+          grep -F 'Customize Ghosium' "$CHROMIUM_SRC/chrome/app/chromium_strings.grd"
+          grep -F 'alt="Ghosium logo"' "$CHROMIUM_SRC/chrome/browser/resources/signin/managed_user_profile_notice/managed_user_profile_notice_value_prop.html.ts"
           if git -C "$CHROMIUM_SRC" status --porcelain=v1 -- third_party | grep -q .; then
             echo "third_party was modified" >&2
             exit 1

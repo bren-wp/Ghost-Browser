@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /inc/
+Disallow: /cron/
+Disallow: /storage/

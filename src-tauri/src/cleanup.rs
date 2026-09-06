@@ -3,8 +3,8 @@ use tauri::{AppHandle, State};
 
 /// Clears all data represented by the global "clear browsing data" action.
 /// Favorites, Vault entries and Mail accounts are intentionally preserved.
-#[tauri::command]
-pub async fn clear_browsing_data(
+#[tauri::command(rename = "clear_browsing_data")]
+pub async fn clear_all_browsing_data(
     app: AppHandle,
     browser_state: State<'_, BrowserState>,
     profile: State<'_, ProfileStore>,

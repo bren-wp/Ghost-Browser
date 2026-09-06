@@ -20,7 +20,7 @@ $patch = $Matches[3]
 $required = @(
   'launcher/main.cpp',
   'launcher/ghosium.rc',
-  'ghosium.ico'
+  'scripts/generate-engine-brand-assets.py'
 )
 foreach ($path in $required) {
   if (!(Test-Path $path -PathType Leaf)) {
@@ -28,13 +28,42 @@ foreach ($path in $required) {
   }
 }
 
-$iconBytes = [IO.File]::ReadAllBytes((Resolve-Path 'ghosium.ico'))
-if ($iconBytes.Length -lt 4 -or
+# Generate the canonical Windows icon on every build rather than trusting a
+# checked-in binary copy. This ensures Setup, Portable and the launcher all use
+# the same deterministic Ghosium mark and the current RC-compatible ICO format.
+$python = Get-Command python -ErrorAction SilentlyContinue
+if (!$python) {
+  $python = Get-Command python3 -ErrorAction SilentlyContinue
+}
+if (!$python) {
+  throw 'Python 3 is required to generate the Ghosium Windows icon.'
+}
+
+$iconPath = [IO.Path]::GetFullPath('ghosium.ico')
+& $python.Source 'scripts/generate-engine-brand-assets.py' --icon-output $iconPath --icon-only
+if ($LASTEXITCODE -ne 0 -or !(Test-Path $iconPath -PathType Leaf)) {
+  throw 'Deterministic Ghosium Windows icon generation failed.'
+}
+
+$iconBytes = [IO.File]::ReadAllBytes($iconPath)
+if ($iconBytes.Length -lt 22 -or
     $iconBytes[0] -ne 0 -or
     $iconBytes[1] -ne 0 -or
     $iconBytes[2] -ne 1 -or
     $iconBytes[3] -ne 0) {
-  throw 'ghosium.ico is not a valid Windows ICO resource.'
+  throw 'Generated ghosium.ico has an invalid ICO header.'
+}
+$iconCount = [BitConverter]::ToUInt16($iconBytes, 4)
+if ($iconCount -lt 4) {
+  throw "Generated ghosium.ico has too few image frames: $iconCount"
+}
+$firstImageOffset = [BitConverter]::ToUInt32($iconBytes, 18)
+if ($firstImageOffset + 4 -gt $iconBytes.Length) {
+  throw 'Generated ghosium.ico contains an invalid first-frame offset.'
+}
+$dibHeaderSize = [BitConverter]::ToUInt32($iconBytes, [int]$firstImageOffset)
+if ($dibHeaderSize -ne 40) {
+  throw "Generated ghosium.ico is not an RC-compatible BITMAPINFOHEADER icon: header=$dibHeaderSize"
 }
 
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -98,4 +127,4 @@ if ($metadata.ProductVersion -ne $expectedProductVersion) {
 }
 
 Remove-Item $resPath -Force -ErrorAction SilentlyContinue
-Write-Host "Ghosium C++20 launcher build and Windows metadata verification: OK"
+Write-Host "Ghosium C++20 launcher build, icon and Windows metadata verification: OK"

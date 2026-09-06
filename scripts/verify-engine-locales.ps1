@@ -28,7 +28,11 @@ function Get-TranslationLocaleCode {
 
 function Test-LegacyBrowserBrand {
   param([Parameter(Mandatory = $true)][string]$Text)
-  return $Text -match '(?i)\bGoogle Chrome\b|\bChromium\b|\bChrome\b'
+
+  # Detect standalone names and grammatical lowercase suffixes such as
+  # Chromiuma/Chromiumu while avoiding unrelated uppercase compounds such as
+  # ChromiumOS/ChromeOS, which are separate upstream platform names.
+  return $Text -match '(?i:\bGoogle Chrome\b)|\bChromium(?=\p{Ll}|\b)|\bChrome(?=\p{Ll}|\b)'
 }
 
 function Assert-XtbBundleBranding {

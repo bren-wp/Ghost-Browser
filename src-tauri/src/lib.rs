@@ -5,6 +5,7 @@ mod profile;
 #[cfg(test)]
 mod profile_tests;
 mod search;
+mod suggestions;
 mod vault;
 #[cfg(all(test, windows))]
 mod vault_tests;
@@ -43,6 +44,7 @@ pub fn run() {
             profile::clear_downloads,
             search::resolve_omnibox_input,
             search::resolve_search_query,
+            suggestions::omnibox_suggestions,
             vault::vault_list,
             vault::vault_save,
             vault::vault_delete,

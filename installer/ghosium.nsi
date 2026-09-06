@@ -16,6 +16,8 @@ Unicode true
 !define PRODUCT_PUBLISHER "Brendigo"
 !define PRODUCT_EXE "Ghosium-Browser.exe"
 !define INSTALLED_SETUP "Installer\Ghosium-Browser-Setup.exe"
+!define CLEANUP_DIR "$TEMP\Brendigo\Ghosium Browser Cleanup"
+!define CLEANUP_SETUP "$TEMP\Brendigo\Ghosium Browser Cleanup\Ghosium-Browser-Setup.exe"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\GhosiumBrowser"
 
 Name "${PRODUCT_NAME} ${GHOSIUM_VERSION}"
@@ -115,41 +117,98 @@ LangString GhosiumLocale ${LANG_TRADCHINESE} "zh-TW"
 LangString GhosiumLocale ${LANG_ARABIC} "ar"
 LangString GhosiumLocale ${LANG_HEBREW} "he"
 
+Function LaunchCleanup
+  StrCpy $R4 "0"
+  CreateDirectory "$TEMP\Brendigo"
+  CreateDirectory "${CLEANUP_DIR}"
+
+  ClearErrors
+  CopyFiles /SILENT "$EXEPATH" "${CLEANUP_SETUP}"
+  IfErrors cleanup_copy_failed
+
+  IfSilent cleanup_launch_silent
+  ClearErrors
+  Exec '"${CLEANUP_SETUP}" /CLEANUP'
+  IfErrors cleanup_launch_failed
+  StrCpy $R4 "1"
+  Return
+
+cleanup_launch_silent:
+  ClearErrors
+  Exec '"${CLEANUP_SETUP}" /CLEANUP /S'
+  IfErrors cleanup_launch_failed
+  StrCpy $R4 "1"
+  Return
+
+cleanup_copy_failed:
+  DetailPrint "Unable to stage the Ghosium setup cleanup process."
+  Return
+
+cleanup_launch_failed:
+  DetailPrint "Unable to launch the Ghosium setup cleanup process."
+FunctionEnd
+
 Function RemoveGhosium
   SetShellVarContext current
 
   ReadRegStr $R2 HKCU "${UNINSTALL_KEY}" "InstallLocation"
-  StrCmp $R2 "" 0 +2
+  StrCmp $R2 "" 0 remove_location_ready
     StrCpy $R2 "$LOCALAPPDATA\Programs\Ghosium Browser"
+remove_location_ready:
   StrCpy $INSTDIR $R2
 
   IfSilent remove_now
   MessageBox MB_ICONQUESTION|MB_YESNO "Remove Ghosium Browser from this Windows account?" IDYES remove_now
-  Abort
+  SetErrorLevel 2
+  Quit
 
 remove_now:
-  ; Stop the launcher/engine so Windows can remove the installation directory.
+  ; Stop the launcher and all engine processes before deleting owned files.
   nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /IM "Ghosium-Browser.exe" /T /F'
   nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /IM "Ghosium-Engine.exe" /T /F'
 
   Delete "$DESKTOP\Ghosium Browser.lnk"
   RMDir /r "$SMPROGRAMS\Ghosium Browser"
+
+  ; The cleanup process is another copy of this same Setup executable running
+  ; from the user's temporary directory, so it can remove the installed Setup
+  ; copy and the rest of the Ghosium directory without a shell command or a
+  ; separately built uninstaller executable.
+  RMDir /r /REBOOTOK "$INSTDIR"
   DeleteRegKey HKCU "${UNINSTALL_KEY}"
   DeleteRegKey HKCU "Software\Brendigo\Ghosium Browser"
 
-  ; This setup executable is also the registered uninstaller. It cannot delete
-  ; its own file while running, so schedule removal of the install directory
-  ; after this process exits. No standalone uninstall executable is generated.
-  ExecShell "open" "$SYSDIR\cmd.exe" '/D /C "timeout /T 2 /NOBREAK >NUL & rmdir /S /Q $\"$INSTDIR$\""' SW_HIDE
+  ; The temporary copy is not a product artifact. Schedule its own cleanup once
+  ; Windows no longer has the current process image open.
+  Delete /REBOOTOK "$EXEPATH"
+  RMDir /REBOOTOK "${CLEANUP_DIR}"
+  SetErrorLevel 0
 FunctionEnd
 
 Function .onInit
   ${GetParameters} $R0
+
+  ClearErrors
+  ${GetOptions} $R0 "/CLEANUP" $R1
+  IfErrors check_uninstall
+  Call RemoveGhosium
+  Quit
+
+check_uninstall:
   ClearErrors
   ${GetOptions} $R0 "/UNINSTALL" $R1
   IfErrors normal_install
 
-  Call RemoveGhosium
+  Call LaunchCleanup
+  StrCmp $R4 "1" cleanup_launched cleanup_failed
+
+cleanup_launched:
+  Quit
+
+cleanup_failed:
+  IfSilent +2
+    MessageBox MB_ICONSTOP "Ghosium Browser could not start the uninstall cleanup process. The installation was left unchanged."
+  SetErrorLevel 1
   Quit
 
 normal_install:
@@ -167,9 +226,9 @@ Section "Ghosium Browser" SecMain
   FileWrite $0 "$(GhosiumLocale)$\r$\n"
   FileClose $0
 
-  ; Keep a copy of the same installer inside the installation. Windows invokes
-  ; this exact setup executable with /UNINSTALL from Installed apps. This avoids
-  ; creating a second Uninstall.exe while retaining a normal uninstall path.
+  ; Keep a copy of this same Setup executable inside the installation. Windows
+  ; invokes it with /UNINSTALL from Installed apps; no separate uninstaller
+  ; executable is generated or shipped.
   CreateDirectory "$INSTDIR\Installer"
   StrCmp "$EXEPATH" "$INSTDIR\${INSTALLED_SETUP}" setup_ready
   CopyFiles /SILENT "$EXEPATH" "$INSTDIR\${INSTALLED_SETUP}"

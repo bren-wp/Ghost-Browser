@@ -140,7 +140,9 @@ Function LaunchCleanup
 
 cleanup_launch_silent:
   ClearErrors
-  Exec '"${CLEANUP_SETUP}" /CLEANUP /S'
+  ; NSIS must see /S before custom switches so the temp cleanup instance is
+  ; already silent when .onInit evaluates IfSilent.
+  Exec '"${CLEANUP_SETUP}" /S /CLEANUP'
   IfErrors cleanup_launch_failed
   StrCpy $R4 "1"
   Return
@@ -232,6 +234,7 @@ check_uninstall:
   StrCmp $R4 "1" cleanup_launched cleanup_failed
 
 cleanup_launched:
+  SetErrorLevel 0
   Quit
 
 cleanup_failed:
@@ -290,7 +293,7 @@ setup_ready:
   WriteRegStr HKCU "${UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon" "$INSTDIR\${PRODUCT_EXE}"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "UninstallString" '$\"$INSTDIR\${INSTALLED_SETUP}$\" /UNINSTALL'
-  WriteRegStr HKCU "${UNINSTALL_KEY}" "QuietUninstallString" '$\"$INSTDIR\${INSTALLED_SETUP}$\" /UNINSTALL /S'
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "QuietUninstallString" '$\"$INSTDIR\${INSTALLED_SETUP}$\" /S /UNINSTALL'
   WriteRegStr HKCU "${UNINSTALL_KEY}" "URLInfoAbout" "https://ghosium.com/"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "HelpLink" "https://ghosium.com/support"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "URLUpdateInfo" "https://ghosium.com/security"

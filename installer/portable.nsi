@@ -1,5 +1,6 @@
 Unicode true
 !include "MUI2.nsh"
+!include "FileFunc.nsh"
 
 !ifndef GHOSIUM_VERSION
   !define GHOSIUM_VERSION "0.0.0"
@@ -105,14 +106,20 @@ Section
   FileClose $0
 
 have_language:
-  StrCpy $R0 "$TEMP\Ghosium-Browser-Portable-${GHOSIUM_VERSION}"
-  RMDir /r "$R0"
+  ; A unique extraction directory prevents concurrent portable launches from
+  ; deleting or overwriting the runtime used by another active invocation.
+  GetTempFileName $R0 "$TEMP"
+  Delete "$R0"
   CreateDirectory "$R0"
   SetOutPath "$R0"
   File /r "${GHOSIUM_STAGE}\*"
   CopyFiles /SILENT "$EXEDIR\Ghosium-Portable-Data\language.txt" "$R0\ghosium-language.txt"
 
-  ExecWait '$\"$R0\Ghosium-Browser.exe$\" $\"--ghosium-portable-profile=$EXEDIR\Ghosium-Portable-Data\User Data$\" --ghosium-wait' $1
+  ; Preserve URLs, local files and supported browser switches supplied to the
+  ; Portable EXE. The native launcher still filters protected Ghosium switches.
+  ${GetParameters} $R1
+  ExecWait '"$R0\Ghosium-Browser.exe" "--ghosium-portable-profile=$EXEDIR\Ghosium-Portable-Data\User Data" --ghosium-wait $R1' $1
+
   RMDir /r "$R0"
   SetErrorLevel $1
 SectionEnd

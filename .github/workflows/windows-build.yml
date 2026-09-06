@@ -80,6 +80,9 @@ jobs:
             curl.exe --fail --silent --show-error --location --retry 5 --retry-all-errors `
               "https://storage.googleapis.com/chromium-browser-snapshots/Win_x64/LAST_CHANGE" `
               --output "$env:RUNNER_TEMP/chromium-last-change.txt"
+            if ($LASTEXITCODE -ne 0) {
+              throw "Unable to resolve the official Chromium LAST_CHANGE value"
+            }
             $revision = (Get-Content "$env:RUNNER_TEMP/chromium-last-change.txt" -Raw).Trim()
           } else {
             $revision = $requestedRevision
@@ -111,12 +114,16 @@ jobs:
           $ErrorActionPreference = "Stop"
           New-Item -ItemType Directory -Force -Path "downloads", "staging/runtime", "artifacts" | Out-Null
 
+          function Download-VerifiedFile([string]$Url, [string]$Destination) {
+            curl.exe --fail --silent --show-error --location --retry 5 --retry-all-errors $Url --output $Destination
+            if ($LASTEXITCODE -ne 0 -or !(Test-Path $Destination -PathType Leaf)) {
+              throw "Download failed: $Url"
+            }
+          }
+
           $base = "https://storage.googleapis.com/chromium-browser-snapshots/Win_x64/$env:CHROMIUM_REVISION"
           $archive = "downloads/chrome-win.zip"
-          $revisionsFile = "downloads/REVISIONS"
-
-          curl.exe --fail --silent --show-error --location --retry 5 --retry-all-errors "$base/chrome-win.zip" --output $archive
-          curl.exe --fail --silent --show-error --location --retry 5 --retry-all-errors "$base/REVISIONS" --output $revisionsFile
+          Download-VerifiedFile "$base/chrome-win.zip" $archive
 
           $archiveHash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
           Expand-Archive -Path $archive -DestinationPath "downloads/chromium" -Force
@@ -132,18 +139,25 @@ jobs:
             throw "Unable to read Chromium product version"
           }
 
-          $revisionsText = Get-Content $revisionsFile -Raw
-          $sourceMatch = [regex]::Match($revisionsText, '[0-9a-f]{40}')
-          $sourceRevision = if ($sourceMatch.Success) { $sourceMatch.Value } else { "unknown" }
+          $crrevUrl = "https://crrev.com/$env:CHROMIUM_REVISION"
+          $effectiveUrl = (& curl.exe --fail --silent --show-error --location --retry 5 --retry-all-errors --output NUL --write-out "%{url_effective}" $crrevUrl).Trim()
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unable to resolve Chromium source revision through crrev"
+          }
+          $sourceMatch = [regex]::Match($effectiveUrl, '/\+/([0-9a-f]{40})(?:/|$)')
+          if (!$sourceMatch.Success) {
+            throw "crrev returned an unexpected Chromium source URL: $effectiveUrl"
+          }
+          $sourceRevision = $sourceMatch.Groups[1].Value
 
-          if ($sourceRevision -ne "unknown") {
-            $licenseEncoded = "downloads/chromium-license.b64"
-            $licenseUrl = "https://chromium.googlesource.com/chromium/src/+/$sourceRevision/LICENSE?format=TEXT"
-            curl.exe --fail --silent --show-error --location --retry 5 --retry-all-errors $licenseUrl --output $licenseEncoded
-            $encoded = (Get-Content $licenseEncoded -Raw).Trim()
+          $licenseEncoded = "downloads/chromium-license.b64"
+          $licenseUrl = "https://chromium.googlesource.com/chromium/src/+/$sourceRevision/LICENSE?format=TEXT"
+          Download-VerifiedFile $licenseUrl $licenseEncoded
+          $encoded = (Get-Content $licenseEncoded -Raw).Trim()
+          try {
             [IO.File]::WriteAllBytes((Join-Path $PWD "staging/CHROMIUM-LICENSE.txt"), [Convert]::FromBase64String($encoded))
-          } else {
-            throw "Official snapshot REVISIONS metadata did not expose a Chromium source revision"
+          } catch {
+            throw "Chromium LICENSE response was not valid Gitiles base64 content: $($_.Exception.Message)"
           }
 
           $buildInfo = [ordered]@{
@@ -239,6 +253,9 @@ jobs:
           $makensis = Get-Command makensis.exe -ErrorAction SilentlyContinue
           if (!$makensis) {
             choco install nsis --yes --no-progress
+            if ($LASTEXITCODE -ne 0) {
+              throw "NSIS installation failed"
+            }
             $candidate = "C:\Program Files (x86)\NSIS\makensis.exe"
             if (!(Test-Path $candidate)) {
               $candidate = "C:\Program Files\NSIS\makensis.exe"
@@ -311,6 +328,9 @@ jobs:
             --notes-file "artifacts/RELEASE-NOTES.md" `
             --latest `
             --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) {
+            throw "Stable GitHub Release publication failed"
+          }
 
   publish-package:
     name: Publish GitHub Package

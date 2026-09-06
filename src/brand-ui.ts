@@ -18,7 +18,7 @@ function enhanceGhosiumWebsiteBrand(): boolean {
   if (eyebrow) eyebrow.textContent = "PRIVATE BY DESIGN";
 
   if (title) {
-    title.innerHTML = 'Browse the web,<br>stay in the <span class="ghost-gradient">ghost.</span>';
+    title.innerHTML = 'Browse the web,<br>stay <span class="ghosium-gradient">unseen.</span>';
   }
 
   if (subtitle) {
@@ -26,22 +26,22 @@ function enhanceGhosiumWebsiteBrand(): boolean {
       "Ghosium je brz preglednik usmjeren na privatnost — manje praćenja, manje nepotrebnog šuma i više kontrole nad podacima koji ostaju na vašem uređaju.";
   }
 
-  if (search && !newtabInner.querySelector(".ghost-product-row")) {
+  if (search && !newtabInner.querySelector(".ghosium-product-row")) {
     const products = document.createElement("div");
-    products.className = "ghost-product-row";
+    products.className = "ghosium-product-row";
     products.setAttribute("aria-label", "Ghosium značajke");
 
     const items = [
-      ["Ghost Shield", "trackeri"],
-      ["Ghost Guard", "dozvole"],
-      ["Ghost Search", "pretraživanje"],
+      ["Ghosium Shield", "trackeri"],
+      ["Ghosium Guard", "dozvole"],
+      ["Ghosium Search", "pretraživanje"],
       ["Password Manager", "vault"],
       ["Memory Saver", "memorija"],
     ] as const;
 
     for (const [name, description] of items) {
       const pill = document.createElement("span");
-      pill.className = "ghost-product-pill";
+      pill.className = "ghosium-product-pill";
       const strong = document.createElement("strong");
       strong.textContent = name;
       pill.append(strong, document.createTextNode(` · ${description}`));
@@ -55,12 +55,12 @@ function enhanceGhosiumWebsiteBrand(): boolean {
     const items = [
       {
         kicker: "● Aktivno",
-        title: "Ghost Shield",
+        title: "Ghosium Shield",
         body: "Poznati trackeri i oglasni zahtjevi blokiraju se prije nego što dođu do stranice.",
       },
       {
         kicker: "● Kontrola",
-        title: "Ghost Guard",
+        title: "Ghosium Guard",
         body: "Kamera, mikrofon i lokacija ostaju pod vašom kontrolom i traže se tek kada su potrebni.",
       },
       {
@@ -89,7 +89,7 @@ function enhanceGhosiumWebsiteBrand(): boolean {
   const privacyHeader = document.querySelector<HTMLElement>("#privacy-panel .panel-header");
   const privacyEyebrow = privacyHeader?.querySelector<HTMLElement>("small");
   const privacyTitle = privacyHeader?.querySelector<HTMLHeadingElement>("h2");
-  if (privacyEyebrow) privacyEyebrow.textContent = "GHOST SHIELD";
+  if (privacyEyebrow) privacyEyebrow.textContent = "GHOSIUM SHIELD";
   if (privacyTitle) privacyTitle.textContent = "Privacy control";
 
   return true;

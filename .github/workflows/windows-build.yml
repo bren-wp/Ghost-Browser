@@ -16,7 +16,7 @@ jobs:
   build-windows:
     name: Build Windows x64
     runs-on: windows-2025
-    timeout-minutes: 45
+    timeout-minutes: 50
 
     steps:
       - name: Checkout
@@ -44,6 +44,26 @@ jobs:
       - name: Audit frontend dependencies
         run: npm run audit
 
+      - name: Check production source invariants
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          if (Test-Path "src/browser-runtime.ts") {
+            throw "Duplicate browser-runtime.ts must not exist"
+          }
+          if (Select-String -Path "src/*.ts" -Pattern "console\.error|debugger;" -Quiet) {
+            throw "Developer-only console/debugger code found in production TypeScript"
+          }
+          if (Select-String -Path "src-tauri/src/profile.rs" -Pattern "\bpassword\b" -Quiet) {
+            throw "Plaintext password field/reference found in Ghost profile storage"
+          }
+          $index = Get-Content "index.html" -Raw
+          foreach ($required in @("/src/main.ts", "/src/library.ts", "/src/styles.css", "/src/library.css")) {
+            if (!$index.Contains($required)) {
+              throw "Production index is missing $required"
+            }
+          }
+
       - name: Check frontend
         run: npm run build
 
@@ -53,7 +73,7 @@ jobs:
       - name: Check Rust
         run: cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
 
-      - name: Test Rust and 320-tab scheduler
+      - name: Run Rust functional tests and 320-tab scheduler
         run: cargo test --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc --lib
 
       - name: Build Ghost Browser and NSIS installer
@@ -107,7 +127,7 @@ jobs:
           $exe = (Resolve-Path "artifacts/Ghost-Browser-Portable.exe").Path
           $process = Start-Process -FilePath $exe -PassThru
           try {
-            Start-Sleep -Seconds 8
+            Start-Sleep -Seconds 10
             $process.Refresh()
             if ($process.HasExited) {
               throw "Ghost Browser exited during the startup smoke-test window with code $($process.ExitCode)"
@@ -137,9 +157,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = "Stop"
-          $tag = "v0.4.0"
-          $title = "Ghost Browser v0.4.0"
-          $notes = "Production Windows build of Ghost Browser v0.4.0 with strict tracking prevention, local request filtering, hardened remote WebViews, improved media permission compatibility, tab restore stability, Windows startup smoke testing and Memory Saver tuned for a 320-tab scheduler with at most 8 live WebViews. Includes Portable.exe, Setup.exe and SHA256 checksums."
+          $tag = "v0.5.0"
+          $title = "Ghost Browser v0.5.0"
+          $notes = "Production Windows build of Ghost Browser v0.5.0 with hardened browser interactions, tested omnibox resolution, local Favorites/History/Downloads, a Windows Credential Manager-protected Password Vault, privacy-first direct TLS Ghost Mail, strict tracking prevention, startup smoke testing and Memory Saver with a 320-tab scheduler. Includes Portable.exe, Setup.exe and SHA256 checksums."
 
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {

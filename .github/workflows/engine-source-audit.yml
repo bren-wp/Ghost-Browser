@@ -1,0 +1,83 @@
+name: Ghosium Full-Source Engine Audit
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'ENGINE_REVISION'
+      - 'ENGINE_SOURCE_REVISION'
+      - 'engine/**'
+      - 'scripts/*engine*.ps1'
+      - '.github/workflows/engine-source-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    name: Verify pinned source and Ghosium invariants
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Validate PowerShell scripts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($path in @(
+            'scripts/bootstrap-engine-source.ps1',
+            'scripts/apply-engine-branding.ps1',
+            'scripts/verify-engine-fork.ps1'
+          )) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path),
+              [ref]$tokens,
+              [ref]$errors
+            )
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              throw "PowerShell parser errors found in $path"
+            }
+          }
+
+      - name: Verify Ghosium source contract
+        shell: pwsh
+        run: ./scripts/verify-engine-fork.ps1
+
+      - name: Verify snapshot-to-source provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          snapshot_revision="$(tr -d '\r\n ' < ENGINE_REVISION)"
+          source_revision="$(tr -d '\r\n ' < ENGINE_SOURCE_REVISION)"
+          effective_url="$(curl --fail --silent --show-error --location --retry 4 --retry-all-errors --output /dev/null --write-out '%{url_effective}' "https://crrev.com/${snapshot_revision}")"
+          case "$effective_url" in
+            *"/${source_revision}"*|*"/+/${source_revision}"*)
+              echo "Snapshot ${snapshot_revision} resolves to pinned source ${source_revision}."
+              ;;
+            *)
+              echo "Snapshot/source mismatch: ${snapshot_revision} -> ${effective_url}; expected ${source_revision}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Audit product URL allowlist
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $config = Get-Content 'engine/branding/product.json' -Raw | ConvertFrom-Json
+          $approved = @($config.allowedProductUrls)
+          $jsonText = Get-Content 'engine/branding/product.json' -Raw
+          $urls = [regex]::Matches($jsonText, 'https://[^"\s]+') | ForEach-Object Value | Sort-Object -Unique
+          foreach ($url in $urls) {
+            if ($approved -notcontains $url) {
+              throw "Unapproved Ghosium product URL found in branding contract: $url"
+            }
+          }

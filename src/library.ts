@@ -119,8 +119,15 @@ function formatTime(epoch: number): string {
   });
 }
 
+function syncActiveTabFromChrome(): string | null {
+  const active = document.querySelector<HTMLElement>(".tab.active[data-tab]")?.dataset.tab;
+  if (active) activeTabId = active;
+  return activeTabId;
+}
+
 function activeTab() {
-  return activeTabId ? tabState.get(activeTabId) : undefined;
+  const id = syncActiveTabFromChrome();
+  return id ? tabState.get(id) : undefined;
 }
 
 async function setRendererHidden(hidden: boolean): Promise<void> {
@@ -144,6 +151,7 @@ async function closeDrawer(): Promise<void> {
 
 async function openDrawer(section: Section): Promise<void> {
   if (!drawer || !content || !titleEl) return;
+  syncActiveTabFromChrome();
   closeChromePanels();
   currentSection = section;
   titleEl.textContent = {
@@ -377,8 +385,12 @@ async function addCurrentFavorite(): Promise<void> {
 }
 
 async function navigate(url: string): Promise<void> {
-  if (!activeTabId) return;
-  await invoke("navigate_tab", { tabId: activeTabId, target: url });
+  const tabId = syncActiveTabFromChrome();
+  if (!tabId) {
+    showMessage("Nema aktivnog taba.");
+    return;
+  }
+  await invoke("navigate_tab", { tabId, target: url });
   await closeDrawer();
 }
 
@@ -399,8 +411,9 @@ async function handleContentClick(event: Event): Promise<void> {
 
   const fill = target.closest<HTMLElement>("[data-fill-vault]");
   if (fill?.dataset.fillVault) {
-    if (!activeTabId) throw new Error("Otvorite web-stranicu prije ispune prijave.");
-    await invoke("vault_fill", { id: fill.dataset.fillVault, tabId: activeTabId });
+    const tabId = syncActiveTabFromChrome();
+    if (!tabId) throw new Error("Otvorite web-stranicu prije ispune prijave.");
+    await invoke("vault_fill", { id: fill.dataset.fillVault, tabId });
     await closeDrawer();
     showMessage("Prijava je unesena samo na odgovarajuću domenu.");
     return;
@@ -525,6 +538,7 @@ async function initialize(): Promise<void> {
     return;
   }
   initialized = true;
+  syncActiveTabFromChrome();
 
   const favorite = document.createElement("button");
   favorite.type = "button";
@@ -625,13 +639,11 @@ await listen<{ url?: string }>("ghost://download", (event) => {
 });
 
 window.addEventListener("focus", () => {
-  const active = document.querySelector<HTMLElement>(".tab.active[data-tab]")?.dataset.tab;
-  if (active) activeTabId = active;
+  syncActiveTabFromChrome();
 });
 
 const activeObserver = new MutationObserver(() => {
-  const active = document.querySelector<HTMLElement>(".tab.active[data-tab]")?.dataset.tab;
-  if (active) activeTabId = active;
+  syncActiveTabFromChrome();
 });
 activeObserver.observe(document.documentElement, {
   childList: true,

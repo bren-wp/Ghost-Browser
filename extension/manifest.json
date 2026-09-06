@@ -20,8 +20,5 @@
   },
   "chrome_url_overrides": {
     "newtab": "newtab.html"
-  },
-  "icons": {
-    "128": "ghosium-mark.svg"
   }
 }

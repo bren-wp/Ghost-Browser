@@ -1,29 +1,44 @@
-# Security Policy
+# Ghosium Browser Security Policy
 
-## Supported releases
+## Supported release
 
-Only the newest stable Ghosium Browser release is supported with Ghosium security fixes. Older releases should be upgraded rather than maintained indefinitely.
+Only the newest stable Ghosium Browser release is supported with security fixes. Older releases should be upgraded.
 
-## Chromium security baseline
+## Security baseline
 
-The desktop security boundary depends heavily on the exact Chromium revision shipped in the release. `BUILD-INFO.json` and `CHROMIUM-REVISION.txt` record that revision, product version, upstream source SHA and archive hash.
+Ghosium inherits a large security surface from its pinned upstream open-source browser engine. Each release therefore pins a specific `ENGINE_REVISION`; updating that revision and rerunning the complete CI pipeline is part of Ghosium security maintenance.
 
-When an upstream Chromium security update is relevant, Ghosium should pin a newer revision, run the complete release pipeline and publish a new stable version.
+Ghosium does not disable the browser sandbox, certificate validation or core process isolation in order to save memory.
 
-## Ghosium-owned security boundaries
+## Launcher protections
 
-CI verifies that the desktop executable layer remains C++ only, legacy wrapper runtimes are absent, bundled browser resources contain no custom JavaScript, the search endpoint is Ghosium Search, declarative rule IDs are unique, the launcher compiles with Windows mitigations and both launcher/Chromium smoke tests pass.
+The native launcher:
 
-The launcher blocks command-line attempts to replace the dedicated profile/extensions or disable sandbox, web security and certificate validation.
+- is compiled with `/GS`, `/sdl`, Control Flow Guard, ASLR, NX compatibility and CET compatibility
+- rejects caller switches that would disable the sandbox, web security or certificate validation
+- controls its own profile path, bundled components and selected language
+- applies Windows image-load mitigation policy
+- disables selected background networking/reporting features
+- validates required runtime files before launch
 
-The shared-hosting search service receives separate PHP syntax/JSON validation and live endpoint smoke tests. Protected server directories ship with `.htaccess` denial rules.
+## Release verification
 
-## Reporting a vulnerability
+CI verifies:
 
-Use GitHub private vulnerability reporting / Security Advisory facilities for this repository when available. Do not publish exploit details in a public issue before a fix is ready.
+- Ghosium-owned desktop executable source remains C++ only
+- bundled browser components remain script-free
+- manifests and JSON parse successfully
+- Ghosium Search and Ghosium Store PHP sources pass syntax tests
+- web-service smoke tests pass
+- the native launcher self-test passes
+- the bundled engine starts in a headless smoke test
+- Setup and Portable EXEs are produced and have plausible sizes
+- stable Release publication attaches only the two intended EXE assets
 
-Include the Ghosium version, Chromium revision, Windows version, reproduction steps and whether the issue reproduces in upstream Chromium. For `search.ghosium.com`, also identify the affected endpoint and PHP version without including API keys or private configuration values.
+## Reporting
 
-## Upstream issues
+Use the repository's private vulnerability reporting / Security Advisory flow when available. Avoid publishing exploit details before a fix exists.
 
-Vulnerabilities that reproduce unchanged in the exact upstream Chromium revision should also be reported to the Chromium project. Ghosium should consume upstream fixes rather than attempting unsafe distribution-layer workarounds for renderer/sandbox memory-safety flaws.
+Useful reports include the Ghosium version, Windows version, minimal reproduction steps, expected/observed behavior and whether the issue appears specific to Ghosium-owned code.
+
+Public security page: https://ghosium.com/security

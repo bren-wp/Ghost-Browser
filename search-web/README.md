@@ -1,43 +1,43 @@
 # Ghosium Search — shared hosting
 
-Ovaj direktorij je samostalna PHP aplikacija za `search.ghosium.com`. Ne koristi bazu podataka: konfiguracija, indeks, cache i privatnosni rate-limit podaci nalaze se u `storage/data/*.json`.
+This directory is the standalone PHP application for `https://search.ghosium.com/`. It does not require a database: configuration, index, cache and privacy rate-limit data use `storage/data/*.json`.
 
-## Zahtjevi
+## Requirements
 
 - PHP 8.1+
-- PHP cURL i DOM ekstenzije za crawler i opcionalni provider
-- Apache/LiteSpeed shared hosting s `.htaccess` podrškom
-- HTTPS certifikat
-- `storage/data` mora biti writable za PHP proces
+- PHP cURL and DOM extensions for the crawler/optional provider
+- Apache or LiteSpeed shared hosting with `.htaccess`
+- HTTPS
+- `storage/data` writable by PHP
 
-## Instalacija
+## Install
 
-1. Sadržaj ovog direktorija prenesite u document root poddomene `search.ghosium.com`.
-2. Provjerite da `https://search.ghosium.com/health.php` vraća `status: ok`.
-3. Ostavite `provider.enabled` na `false` za potpuno lokalni JSON indeks.
-4. U `storage/data/seeds.json` dodajte HTTPS domene koje želite indeksirati.
-5. U hostingu postavite cron, primjerice `php /home/USER/search.ghosium.com/cron/reindex.php`.
+1. Upload the contents of this directory to the document root for `search.ghosium.com`.
+2. Confirm `https://search.ghosium.com/health.php` returns `status: ok`.
+3. Leave `provider.enabled` set to `false` for a fully local JSON index.
+4. Add HTTPS seed domains to `storage/data/seeds.json`.
+5. Schedule `php /home/USER/search.ghosium.com/cron/reindex.php` through hosting cron.
 
-## Lokalni engine
+## Local engine
 
-`cron/reindex.php` dohvaća samo seed hostove, parsira naslov/opis/linkove i sprema vlastiti indeks u `storage/data/index.json`. `index.php` i `api/search.php` rangiraju taj indeks lokalno. Nema vanjskog search providera dok ga sami ne uključite.
+`cron/reindex.php` fetches only configured seed hosts, extracts title/description/links and writes the first-party index to `storage/data/index.json`. `index.php` and `api/search.php` rank that index locally.
 
-Shared hosting i JSON datoteke nisu infrastruktura za indeks cijelog javnog weba. Za široki web indeks trebate vlastiti distribuirani crawler/index ili kompatibilan server-side API. Ghosium podržava generički JSON provider bez hardkodiranja vendor imena.
+A single shared-hosting account with JSON files cannot maintain a complete index of the public web. A global independent Ghosium index requires dedicated distributed crawler/index infrastructure.
 
-## Opcionalni kompatibilni JSON provider
+## Optional server-side provider
 
-U `storage/data/config.json` postavite `provider.enabled: true`, HTTPS endpoint i server-side API key. Endpoint treba vratiti:
+A compatible JSON provider can be enabled in the protected configuration. Its API key stays on the server and is never embedded in Ghosium Browser.
+
+Expected response shape:
 
 ```json
 {
   "results": [
-    {"title": "Naslov", "url": "https://example.com/", "description": "Opis"}
+    {"title": "Ghosium", "url": "https://ghosium.com/", "description": "Ghosium result"}
   ]
 }
 ```
 
-API key se nikad ne šalje browseru. Ghosium cache ključ je SHA-256 normaliziranog upita; sirovi upit se ne sprema u cache datoteku.
+## Privacy
 
-## Privatnost
-
-Aplikacija ne postavlja tracking kolačiće, ne stvara korisničke račune i ne vodi aplikacijski query log. Rate limiting sprema samo HMAC identifikator mrežnog klijenta po vremenskom prozoru, bez sirove IP adrese. Web-server/hosting provider može imati vlastite access logove izvan ove aplikacije.
+The application does not create accounts, set tracking cookies or keep a raw application query log. Rate limiting stores an HMAC identifier per time window rather than a raw client IP address. Hosting-provider access logs can still exist outside the application.

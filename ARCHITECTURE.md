@@ -2,33 +2,55 @@
 
 ## Goal
 
-Ghosium is a Chromium-native distribution, not a browser rendered inside another application's embedded webview. The browser runtime is upstream Chromium and the only Ghosium-owned executable desktop layer is a small C++20 launcher.
+Ghosium Browser keeps the Ghosium-owned desktop layer small, auditable and native while reusing a pinned upstream open-source browser engine.
 
-## Desktop runtime
+## Runtime layout
 
-1. `Ghosium-Browser.exe` validates bundled files and prepares the dedicated profile.
-2. The launcher applies Windows image-load mitigations.
-3. It starts the pinned `runtime/chrome.exe` Chromium binary.
-4. `extension/` is loaded for local new-tab presentation and declarative privacy filtering.
-5. `search-provider/` is loaded as a separate single-purpose search-provider override pointing to `search.ghosium.com`.
-6. Chromium itself owns tabs, navigation, renderer processes, sandboxing, settings, downloads, permissions, extensions and DevTools.
+```text
+Ghosium-Browser.exe            native C++20 launcher
+runtime/Ghosium-Engine.exe     bundled browser engine entry point
+extension/                     Ghosium Privacy + branded New Tab
+search-provider/               Ghosium Search default-provider component
+```
 
-No remote page receives an IPC bridge into the C++ launcher.
+The launcher owns profile selection, language selection, privacy switches, weak-PC resource limits, protected command-line arguments and process startup.
 
-## Protected command line
+## Trust boundaries
 
-The launcher does not forward caller switches that would replace the profile/extensions or weaken critical browser security. It filters custom profile/extension overrides, sandbox disabling, web-security disabling, certificate-error bypass, insecure-content bypass and remote-debugging switches. Ordinary URLs and normal Chromium arguments are forwarded.
+### Ghosium-owned executable code
 
-## Performance modes
+`launcher/main.cpp` is the only Ghosium-owned executable desktop source layer. CI rejects Rust, TypeScript and JavaScript executable source inside the desktop launcher/component paths.
 
-`GlobalMemoryStatusEx` determines installed physical memory. At 8 GiB or below, Low Memory mode limits Chromium to six renderer processes and a 128 MiB disk-cache budget. Balanced mode leaves renderer/cache policy to Chromium. Security features are not disabled as a memory optimization.
+### Bundled presentation/configuration
 
-## Search service boundary
+`extension/` and `search-provider/` contain HTML/CSS/JSON/Manifest resources. They remain script-free.
 
-`search-web/` is intentionally separate from the desktop executable. It is PHP because it must run on common shared hosting, while the browser remains C++/Chromium. The service defaults to a local JSON index and can optionally proxy a privately configured compatible JSON result API.
+### Web services
 
-The browser never contains a provider API key.
+`search-web/` and `store-web/` are separate PHP shared-hosting applications. They are not linked into the browser executable.
 
-## Release provenance
+## Product links
 
-`CHROMIUM_REVISION` pins the Windows Chromium snapshot. CI records the Chromium product version, Chromium source Git SHA and SHA-256 of the downloaded upstream archive in `BUILD-INFO.json` and `CHROMIUM-REVISION.txt`.
+Ghosium-controlled UI may link only to:
+
+- `ghosium.com`
+- `search.ghosium.com`
+- `store.ghosium.com`
+
+Websites entered by the user and search results are ordinary web content and are not restricted to those domains.
+
+## Privacy
+
+The launcher disables selected background network/reporting features while preserving the sandbox, certificate validation and core process isolation. The privacy component uses declarative request rules rather than an always-running custom script.
+
+## Languages
+
+Setup writes `ghosium-language.txt`. The launcher validates the locale before adding `--lang=<locale>`. Invalid/missing values fall back to `en-US`.
+
+## Portable mode
+
+The Portable EXE extracts the application runtime temporarily and starts the native launcher with a dedicated portable profile path. The launcher can wait for the engine process, allowing the wrapper to remove temporary runtime files when the browser closes.
+
+## Branding boundary
+
+Ghosium-owned surfaces use Ghosium branding. Required upstream license/attribution text remains in `THIRD_PARTY_NOTICES.md` and installed third-party license files. A future full-source engine build can replace additional upstream internal strings/resources that cannot safely be changed at the distribution layer.

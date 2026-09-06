@@ -20,6 +20,6 @@
   "crawler": {
     "max_pages": 40,
     "max_depth": 2,
-    "user_agent": "GhosiumSearchBot/0.6"
+    "user_agent": "GhosiumSearchBot/0.7"
   }
 }

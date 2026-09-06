@@ -1,38 +1,41 @@
-# Contributing
+# Contributing to Ghosium Browser
 
 ## Scope
 
-Ghosium-specific executable code should remain C++ unless there is a compelling upstream Chromium requirement. Presentation resources may use HTML, CSS, SVG and JSON.
+Contributions should preserve the current architecture and privacy/security guarantees.
 
-Do not introduce an additional browser engine, embedded browser runtime, application framework or JavaScript application shell.
+## Desktop rules
 
-## Change rules
+- Ghosium-owned desktop executable code remains C++20.
+- Do not add Tauri, WebView2 application wrappers, Rust browser cores or TypeScript/JavaScript browser runtimes.
+- Keep bundled New Tab/search components script-free unless a future architecture change is explicitly approved.
+- Do not add switches that disable sandboxing, certificate validation or core browser security isolation.
+- Keep Ghosium-controlled product links on Ghosium-owned domains.
 
-- Keep the Chromium runtime upstream and pinned.
-- Prefer Chromium-native behavior over reimplementing browser features.
-- Do not weaken the Chromium sandbox or disable security updates/components for cosmetic reasons.
-- Do not add Ghosium analytics, advertising IDs or background telemetry.
-- Do not commit API keys, OAuth secrets, signing keys or passwords.
-- Privacy rules must be narrowly scoped and reviewed for site-breakage risk.
-- Any change to `launcher/`, `extension/`, installer logic or release workflow must update relevant documentation.
-- Ghosium version changes require a `CHANGELOG.md` entry.
+## Web-service rules
 
-## Pull requests
+`search-web/` and `store-web/` target commodity shared hosting:
 
-A pull request should explain:
+- PHP 8.1+
+- JSON storage
+- no mandatory SQL database
+- no analytics/advertising SDKs
+- no remote font dependency
+- secure headers and protected storage paths
 
-1. the user-visible behavior being changed;
-2. security/privacy implications;
-3. how it was tested;
-4. whether the Chromium revision changes;
-5. whether release artifacts or package metadata change.
+## Branding
 
-CI must pass before merge.
+User-facing product copy should use Ghosium branding. Required upstream legal attribution belongs only in the designated notice/license files and build metadata.
 
-## Formatting
+## Releases
 
-C++ should follow a clean Chromium-like style: small functions, explicit error handling, RAII where practical, no hidden global mutable state and no exception-dependent control flow in the launcher.
+Release assets must remain limited to:
 
-## Security-sensitive changes
+- `Ghosium-Browser-Setup.exe`
+- `Ghosium-Browser-Portable.exe`
 
-For vulnerabilities, use the private security reporting path described in `SECURITY.md` rather than a public pull request containing exploit details.
+The source code is represented by GitHub's release-tag source archives.
+
+## Testing
+
+Before merge, CI must pass browser build/smoke tests plus Search and Store PHP/JSON validation.

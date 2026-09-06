@@ -1,14 +1,42 @@
-# Stable Release Procedure
+# Ghosium Stable Release Procedure
 
-1. Select and pin a numeric `CHROMIUM_REVISION`.
-2. Update `VERSION` and both bundled Manifest V3 versions.
-3. Review Chromium upstream security changes.
-4. Run PR CI until both `Verify Ghosium Search shared hosting` and `Build and verify Windows x64` are green.
-5. Merge to `main` only after the Chromium download, source mapping, C++ compile, launcher self-test, Chromium smoke test, NSIS build and PHP search tests all pass.
-6. The `main` push creates a normal GitHub Release only if the `vVERSION` tag does not already exist.
-7. Release publication defaults to stable; no pre-release flag is used.
-8. After the stable Release succeeds, the same verified bundle is published to `ghcr.io/bren-wp/ghosium-browser:VERSION` and `:latest`.
+## Release policy
 
-Release assets include Browser Setup, Browser Portable ZIP, Ghosium Search shared-hosting ZIP, SHA-256 sums and Chromium provenance/license files.
+Ghosium publishes normal stable GitHub Releases only. The workflow does not use the pre-release flag.
 
-Never reuse an existing version number for different binaries.
+## Public release assets
+
+Exactly two explicit assets are attached:
+
+- `Ghosium-Browser-Setup.exe`
+- `Ghosium-Browser-Portable.exe`
+
+GitHub automatically exposes the matching source-code archives for the release tag. Search/Store shared-hosting source is included there rather than attached as separate web ZIP assets.
+
+## Required green checks
+
+Before publication:
+
+- Ghosium Search PHP/JSON tests pass
+- Ghosium Store PHP/JSON tests pass
+- Ghosium-controlled UI contains only Ghosium product links
+- desktop executable source validation passes
+- Ghosium launcher builds with hardening flags
+- launcher self-test passes
+- upstream engine starts after Ghosium packaging/rename
+- Setup EXE builds
+- Portable EXE builds
+
+## Versioning
+
+`VERSION`, bundled component versions and release tag must match.
+
+Production uses a pinned numeric `ENGINE_REVISION`.
+
+## GitHub Package
+
+After the stable Release succeeds, the same verified Setup/Portable executables are mirrored into the versioned Ghosium GitHub Package/OCI bundle and tagged with both the release version and `latest`.
+
+## Signing
+
+The current workflow does not claim Authenticode signing unless a valid Brendigo code-signing certificate is explicitly configured. Never describe an unsigned build as signed.

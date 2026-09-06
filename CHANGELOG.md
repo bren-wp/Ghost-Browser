@@ -1,22 +1,37 @@
 # Changelog
 
+## 0.7.0
+
+### Branding
+- Ghosium-only New Tab copy and navigation.
+- Ghosium-controlled product links now point only to Ghosium-owned domains.
+- Engine entry executable is packaged as `Ghosium-Engine.exe`.
+- User-facing documentation now uses Ghosium terminology; legally required third-party attribution remains isolated in the notices/license material.
+
+### Search and Store
+- Ghosium Search remains the default search endpoint.
+- Added complete `store-web/` shared-hosting source for `store.ghosium.com`.
+- Store uses PHP + JSON, no SQL database, no application JavaScript and no third-party assets.
+
+### Languages
+- Setup language chooser expanded to 30 languages.
+- English is the default/fallback; Croatian is included.
+- Selected installer locale now controls browser launch language.
+- Portable mode stores its selected language beside the portable profile.
+
+### Privacy and security
+- Added background-networking suppression in the native launcher.
+- Preserved sandbox, certificate validation and core process isolation.
+- Added validated portable profile/language launcher controls.
+- Setup includes Brendigo publisher metadata and local license acceptance page.
+
+### Packaging
+- Stable GitHub Releases now attach only `Ghosium-Browser-Setup.exe` and `Ghosium-Browser-Portable.exe`.
+- Source code is delivered through GitHub's automatic source archives.
+- Search/Store deployable source remains in the release-tag source code instead of separate web ZIP assets.
+
 ## 0.6.0
 
-- replaced the former embedded-browser application architecture with direct upstream Chromium distribution
-- removed WebView2/Tauri/Rust/TypeScript browser runtime layers
-- standardized Ghosium-owned desktop executable code on C++20
-- added hardened command-line filtering and Windows image-load mitigations
-- added automatic Low Memory mode for systems with 8 GiB RAM or less
-- retained normal Balanced mode and Chromium security isolation
-- added script-free Ghosium new-tab design with no vertical scrolling
-- changed all bundled search entry points to Ghosium Search
-- added single-purpose Manifest V3 Ghosium Search provider override
-- retained declarative Ghosium Privacy filtering and tracking-parameter cleanup
-- added complete `search.ghosium.com` PHP shared-hosting implementation with JSON storage and no database
-- added local JSON crawler/index, local ranker, suggestion endpoint, optional generic server-side provider and privacy-aware cache/rate limiting
-- added PHP/JSON search-service CI smoke tests
-- fixed deterministic Chromium/C++ smoke testing
-- fixed NSIS staging-path handling with absolute build definitions
-- added shared-hosting Search ZIP to stable release assets and checksums
-- updated stable Release and GitHub Packages publication workflow
-- expanded architecture, privacy, performance, search, deployment and release documentation
+- Migrated the desktop distribution to a direct pinned upstream open-source browser engine with a small native C++ launcher.
+- Added Ghosium Search shared-hosting source, declarative privacy rules and automatic Low Memory mode.
+- Added stable Windows Setup/Portable build and release verification.

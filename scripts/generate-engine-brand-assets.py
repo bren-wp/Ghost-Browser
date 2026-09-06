@@ -3,7 +3,11 @@
 
 The default mode writes Chromium source-tree brand resources. ``--icon-only``
 can generate the same canonical multi-resolution ICO for the native launcher,
-Setup and Portable executables without storing duplicate binary assets in Git.
+Setup and Portable executables without storing duplicate hand-authored assets.
+
+ICO frames use standard Windows 32-bit DIB/BGRA data plus an AND mask instead
+of PNG-compressed icon frames. This keeps the file compatible with Microsoft's
+``rc.exe`` as well as NSIS and Explorer.
 
 Uses only the Python standard library so builders do not need Pillow,
 ImageMagick or browser-runtime dependencies.
@@ -35,7 +39,6 @@ def gradient(t: float) -> tuple[int, int, int]:
 
 
 def inside_ghost(x: float, y: float) -> bool:
-    # Rounded dome and body inspired by the canonical Ghosium ghost mark.
     dome = ((x - 0.5) / 0.35) ** 2 + ((y - 0.40) / 0.31) ** 2 <= 1.0
     body = 0.15 <= x <= 0.85 and 0.36 <= y <= 0.73
     if not (dome or body):
@@ -43,7 +46,6 @@ def inside_ghost(x: float, y: float) -> bool:
     if y < 0.70:
         return True
 
-    # Five soft scallops on the lower edge.
     phase = (x - 0.15) / 0.70
     bottom = 0.78 + 0.055 * math.sin(phase * math.pi * 5.0) ** 2
     return y <= bottom
@@ -54,7 +56,6 @@ def inside_eye(x: float, y: float, cx: float) -> bool:
 
 
 def on_mouth(x: float, y: float) -> bool:
-    # Upward-curved smile centred under the eyes.
     if not 0.38 <= x <= 0.62:
         return False
     dx = (x - 0.5) / 0.12
@@ -106,7 +107,12 @@ def png_bytes(size: int) -> bytes:
         raw.extend(rgba[y * stride : (y + 1) * stride])
 
     def chunk(kind: bytes, payload: bytes) -> bytes:
-        return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+        )
 
     return (
         b"\x89PNG\r\n\x1a\n"
@@ -116,14 +122,53 @@ def png_bytes(size: int) -> bytes:
     )
 
 
+def dib_icon_frame(size: int) -> bytes:
+    """Return one ICO image frame as a Windows 32-bit DIB.
+
+    ICO DIB height is doubled because it contains the XOR bitmap followed by
+    the 1-bit AND transparency mask. Pixels are stored bottom-up as BGRA.
+    """
+
+    rgba = render_rgba(size)
+    bitmap_header = struct.pack(
+        "<IiiHHIIiiII",
+        40,          # biSize
+        size,        # biWidth
+        size * 2,    # biHeight: XOR + AND masks
+        1,           # biPlanes
+        32,          # biBitCount
+        0,           # BI_RGB
+        size * size * 4,
+        0,
+        0,
+        0,
+        0,
+    )
+
+    xor = bytearray()
+    for y in range(size - 1, -1, -1):
+        for x in range(size):
+            off = (y * size + x) * 4
+            r, g, b, a = rgba[off : off + 4]
+            xor.extend((b, g, r, a))
+
+    # One bit per pixel, DWORD-aligned. Alpha already carries transparency, so
+    # an all-zero AND mask is correct for modern 32-bit icon consumers.
+    and_stride = ((size + 31) // 32) * 4
+    and_mask = bytes(and_stride * size)
+    return bitmap_header + bytes(xor) + and_mask
+
+
 def ico_bytes(sizes: tuple[int, ...] = (16, 24, 32, 48, 64, 128, 256)) -> bytes:
-    images = [png_bytes(size) for size in sizes]
+    images = [dib_icon_frame(size) for size in sizes]
     header = struct.pack("<HHH", 0, 1, len(images))
     directory = bytearray()
     offset = 6 + len(images) * 16
     for size, data in zip(sizes, images):
         wh = 0 if size == 256 else size
-        directory.extend(struct.pack("<BBBBHHII", wh, wh, 0, 0, 1, 32, len(data), offset))
+        directory.extend(
+            struct.pack("<BBBBHHII", wh, wh, 0, 0, 1, 32, len(data), offset)
+        )
         offset += len(data)
     return header + bytes(directory) + b"".join(images)
 

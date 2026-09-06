@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "browser-shell",
-  "description": "Only the trusted Ghost Browser chrome receives the minimal native permissions it needs. Remote tab webviews are intentionally excluded.",
+  "description": "Only the trusted Ghosium Browser chrome receives the minimal native permissions it needs. Remote tab webviews are intentionally excluded.",
   "webviews": ["main"],
   "permissions": [
     "core:event:allow-listen",

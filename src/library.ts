@@ -161,7 +161,7 @@ async function openDrawer(section: Section): Promise<void> {
     history: "Povijest",
     downloads: "Preuzimanja",
     vault: "Password Vault",
-    mail: "Ghost Mail",
+    mail: "Ghosium Mail",
   }[section];
   await setRendererHidden(true);
   drawer.classList.add("open");
@@ -238,7 +238,7 @@ function vaultForm(defaultOrigin = ""): string {
       <label><span>Lozinka</span><input id="vault-password" type="password" required maxlength="2048" autocomplete="new-password" /></label>
       <label><span>Naziv</span><input id="vault-label" type="text" maxlength="2048" placeholder="Opcionalno" /></label>
       <button class="library-primary" type="submit">Sigurno spremi</button>
-      <p class="vault-note">Tajna se čuva u Windows Credential Manageru. Ghost profil sadrži samo domenu i korisničko ime.</p>
+      <p class="vault-note">Tajna se čuva u Windows Credential Manageru. Ghosium profil sadrži samo domenu i korisničko ime.</p>
     </form>`;
 }
 
@@ -285,7 +285,7 @@ function mailAccountForm(): string {
         <label><span>SMTP port</span><select id="mail-smtp-port"><option value="465">465 · TLS</option><option value="587">587 · STARTTLS</option></select></label>
       </div>
       <button class="library-primary" type="submit">Testiraj i spremi račun</button>
-      <p class="vault-note">Ghost prvo provjerava TLS prijavu. Lozinka se zatim sprema u Windows Credential Manager i ne zapisuje se u Ghost profil.</p>
+      <p class="vault-note">Ghosium prvo provjerava TLS prijavu. Lozinka se zatim sprema u Windows Credential Manager i ne zapisuje se u Ghosium profil.</p>
     </form>`;
 }
 
@@ -356,7 +356,7 @@ async function renderMail(loadInbox = false): Promise<void> {
       </div>
       ${composeForm(selected)}
       ${inbox}
-      <p class="vault-note mail-privacy-note">Ghost Mail prikazuje samo zaglavlja INBOX-a. Remote HTML, slike i tracking pikseli se ne učitavaju.</p>` : `<div class="library-empty compact">Dodajte račun za korištenje Ghost Maila.</div>`}
+      <p class="vault-note mail-privacy-note">Ghosium Mail prikazuje samo zaglavlja INBOX-a. Remote HTML, slike i tracking pikseli se ne učitavaju.</p>` : `<div class="library-empty compact">Dodajte račun za korištenje Ghosium Maila.</div>`}
   `;
 }
 
@@ -561,7 +561,7 @@ async function initialize(): Promise<void> {
     ["history", "Povijest", "Ctrl+H"],
     ["downloads", "Preuzimanja", "Ctrl+J"],
     ["vault", "Password Vault", "Ctrl+Shift+P"],
-    ["mail", "Ghost Mail", "Ctrl+Shift+M"],
+    ["mail", "Ghosium Mail", "Ctrl+Shift+M"],
   ];
   for (const [section, label, shortcut] of sections) {
     const button = document.createElement("button");
@@ -577,7 +577,7 @@ async function initialize(): Promise<void> {
   shell.insertAdjacentHTML("beforeend", `
     <aside class="library-drawer" id="library-drawer" aria-hidden="true">
       <header class="library-header">
-        <div><small>GHOST LOKALNO</small><h2 id="library-title">Favoriti</h2></div>
+        <div><small>GHOSIUM LOKALNO</small><h2 id="library-title">Favoriti</h2></div>
         <button class="library-close" id="library-close" aria-label="Zatvori">×</button>
       </header>
       <div class="library-content" id="library-content"></div>
@@ -614,7 +614,7 @@ async function initialize(): Promise<void> {
   }, true);
 }
 
-await listen<TabEvent>("ghost://tab-event", (event) => {
+await listen<TabEvent>("ghosium://tab-event", (event) => {
   const update = event.payload;
   const existing = tabState.get(update.id) ?? { title: "Novi tab", url: null, loading: false };
   if (update.title !== undefined) existing.title = update.title || "Novi tab";
@@ -630,11 +630,11 @@ await listen<TabEvent>("ghost://tab-event", (event) => {
   }
 });
 
-await listen<ActiveTabEvent>("ghost://active-tab", (event) => {
+await listen<ActiveTabEvent>("ghosium://active-tab", (event) => {
   if (event.payload?.id) activeTabId = event.payload.id;
 });
 
-await listen<{ url?: string }>("ghost://download", (event) => {
+await listen<{ url?: string }>("ghosium://download", (event) => {
   if (event.payload?.url) {
     void invoke("record_download", { url: event.payload.url }).catch(() => undefined);
   }

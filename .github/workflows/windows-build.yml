@@ -1,4 +1,4 @@
-name: Ghost Browser Windows Build
+name: Ghosium Browser Windows Build
 
 on:
   push:
@@ -22,10 +22,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Enforce Ghosium-only branding
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $legacy = "gh" + "ost"
+          $badPaths = @(git ls-files | Where-Object { $_ -match "(?i)$legacy" })
+          if ($badPaths.Count -gt 0) {
+            throw "Legacy product branding remains in tracked paths: $($badPaths -join ', ')"
+          }
+
+          $matches = @(git grep -I -n -i -- $legacy -- . 2>$null)
+          $grepExit = $LASTEXITCODE
+          if ($grepExit -eq 0) {
+            throw "Legacy product branding remains in tracked text:`n$($matches -join "`n")"
+          }
+          if ($grepExit -ne 1) {
+            throw "Branding scan failed with exit code $grepExit"
+          }
+          Write-Host "Ghosium-only branding validated."
+          exit 0
+
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -38,8 +60,18 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
+      - name: Verify dependency locks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          foreach ($lock in @("package-lock.json", "src-tauri/Cargo.lock")) {
+            if (!(Test-Path $lock -PathType Leaf)) {
+              throw "Required reproducible dependency lock is missing: $lock"
+            }
+          }
+
       - name: Install frontend dependencies
-        run: npm install
+        run: npm ci
 
       - name: Upload generated npm lockfile
         uses: actions/upload-artifact@v4
@@ -63,9 +95,9 @@ jobs:
             throw "Developer-only console/debugger code found in production TypeScript"
           }
           if (Select-String -Path "src-tauri/src/profile.rs" -Pattern "pub\s+(password|secret)\s*:" -Quiet) {
-            throw "Plaintext secret field found in Ghost profile storage"
+            throw "Plaintext secret field found in Ghosium profile storage"
           }
-          foreach ($requiredFile in @("src/overlay.ts", "src-tauri/src/suggestions.rs", "src/browser-ui.css")) {
+          foreach ($requiredFile in @("src/overlay.ts", "src-tauri/src/suggestions.rs", "src/browser-ui.css", "src-tauri/src/cleanup.rs", "src-tauri/resources/ghosium-default-filters.txt")) {
             if (!(Test-Path $requiredFile)) {
               throw "Required production module is missing: $requiredFile"
             }
@@ -80,6 +112,9 @@ jobs:
           if (!$main.Contains('"omnibox_suggestions"')) {
             throw "Production shell is not wired to the local omnibox suggestion engine"
           }
+          if (!$main.Contains('"resolve_omnibox_input"')) {
+            throw "Production shell is not wired to the tested omnibox resolver"
+          }
           if (!$main.Contains('from "./overlay"')) {
             throw "Production shell is not wired to overlay coordination"
           }
@@ -87,17 +122,32 @@ jobs:
           if (!$library.Contains('from "./overlay"')) {
             throw "Library UI is not wired to overlay coordination"
           }
+          $lib = Get-Content "src-tauri/src/lib.rs" -Raw
+          if (!$lib.Contains("cleanup::clear_all_browsing_data")) {
+            throw "Global clear action is not routed through complete profile cleanup"
+          }
+
+          $packageVersion = (Get-Content "package.json" -Raw | ConvertFrom-Json).version
+          $tauriVersion = (Get-Content "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json).version
+          $cargoText = Get-Content "src-tauri/Cargo.toml" -Raw
+          $cargoVersionMatch = [regex]::Match($cargoText, '(?ms)^\[package\]\s.*?^version\s*=\s*"([^"]+)"')
+          if (!$cargoVersionMatch.Success) {
+            throw "Could not read Cargo package version"
+          }
+          $cargoVersion = $cargoVersionMatch.Groups[1].Value
+          if ($packageVersion -ne $tauriVersion -or $packageVersion -ne $cargoVersion) {
+            throw "Version mismatch: package.json=$packageVersion tauri=$tauriVersion Cargo=$cargoVersion"
+          }
+          Write-Host "Validated Ghosium Browser version $packageVersion"
 
       - name: Check frontend
         run: npm run build
 
-      - name: Check Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
       - name: Check Rust
-        run: cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
+        run: cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc --locked
 
-      - name: Build Ghost Browser and NSIS installer
         run: npm run tauri build -- --target x86_64-pc-windows-msvc --bundles nsis
 
       - name: Collect portable and setup executables
@@ -108,34 +158,34 @@ jobs:
           $out = "artifacts"
           New-Item -ItemType Directory -Force -Path $out | Out-Null
 
-          $portable = Join-Path $release "ghost-browser.exe"
+          $portable = Join-Path $release "ghosium-browser.exe"
           if (!(Test-Path $portable)) {
             throw "Portable executable was not produced at $portable"
           }
-          Copy-Item $portable (Join-Path $out "Ghost-Browser-Portable.exe")
+          Copy-Item $portable (Join-Path $out "Ghosium-Browser-Portable.exe")
 
           $setup = Get-ChildItem (Join-Path $release "bundle/nsis") -Filter "*.exe" | Select-Object -First 1
           if ($null -eq $setup) {
             throw "NSIS setup executable was not produced"
           }
-          Copy-Item $setup.FullName (Join-Path $out "Ghost-Browser-Setup.exe")
+          Copy-Item $setup.FullName (Join-Path $out "Ghosium-Browser-Setup.exe")
 
-          $portableOut = Get-Item (Join-Path $out "Ghost-Browser-Portable.exe")
-          $setupOut = Get-Item (Join-Path $out "Ghost-Browser-Setup.exe")
+          $portableOut = Get-Item (Join-Path $out "Ghosium-Browser-Portable.exe")
+          $setupOut = Get-Item (Join-Path $out "Ghosium-Browser-Setup.exe")
           $maxPortableBytes = 20MB
           $maxSetupBytes = 15MB
           if ($portableOut.Length -gt $maxPortableBytes) {
-            throw "Portable executable exceeds the 20 MB Ghost Browser size budget"
+            throw "Portable executable exceeds the 20 MB transitional Ghosium Browser size budget"
           }
           if ($setupOut.Length -gt $maxSetupBytes) {
-            throw "Setup executable exceeds the 15 MB Ghost Browser size budget"
+            throw "Setup executable exceeds the 15 MB transitional Ghosium Browser size budget"
           }
 
           $portableHash = (Get-FileHash $portableOut.FullName -Algorithm SHA256).Hash.ToLower()
           $setupHash = (Get-FileHash $setupOut.FullName -Algorithm SHA256).Hash.ToLower()
           @(
-            "$portableHash  Ghost-Browser-Portable.exe",
-            "$setupHash  Ghost-Browser-Setup.exe"
+            "$portableHash  Ghosium-Browser-Portable.exe",
+            "$setupHash  Ghosium-Browser-Setup.exe"
           ) | Set-Content (Join-Path $out "SHA256SUMS.txt") -Encoding ascii
 
           Write-Host "Portable size: $([math]::Round($portableOut.Length / 1MB, 2)) MB"
@@ -145,15 +195,15 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $exe = (Resolve-Path "artifacts/Ghost-Browser-Portable.exe").Path
+          $exe = (Resolve-Path "artifacts/Ghosium-Browser-Portable.exe").Path
           $process = Start-Process -FilePath $exe -PassThru
           try {
             Start-Sleep -Seconds 10
             $process.Refresh()
             if ($process.HasExited) {
-              throw "Ghost Browser exited during the startup smoke-test window with code $($process.ExitCode)"
+              throw "Ghosium Browser exited during the startup smoke-test window with code $($process.ExitCode)"
             }
-            Write-Host "Ghost Browser startup smoke test passed (PID $($process.Id))."
+            Write-Host "Ghosium Browser startup smoke test passed (PID $($process.Id))."
           }
           finally {
             if (!$process.HasExited) {
@@ -166,7 +216,7 @@ jobs:
       - name: Upload Windows binaries
         uses: actions/upload-artifact@v4
         with:
-          name: Ghost-Browser-Windows-x64
+          name: Ghosium-Browser-Windows-x64
           path: artifacts/*
           if-no-files-found: error
           retention-days: 30
@@ -178,14 +228,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = "Stop"
-          $tag = "v0.5.0"
-          $title = "Ghost Browser v0.5.0"
-          $notes = "Production Windows build of Ghost Browser v0.5.0 with hardened browser interactions, a Chromium-based renderer, tested same-tab omnibox resolution, local Chrome-like suggestions from Favorites and History, local Favorites/History/Downloads, a Windows Credential Manager-protected Password Vault, privacy-first direct TLS Ghost Mail, strict tracking prevention, coordinated native overlays, startup smoke testing and Memory Saver with a 320-tab scheduler. Includes Portable.exe, Setup.exe and SHA256 checksums."
+          $version = (Get-Content "package.json" -Raw | ConvertFrom-Json).version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Invalid release version: $version"
+          }
+          $tag = "v$version"
+          $title = "Ghosium Browser v$version"
+          $notes = "Production Windows build of Ghosium Browser v$version with hardened browser interactions, tested same-tab omnibox resolution, local Chrome-like suggestions from Favorites, History and open tabs, complete browsing-data cleanup, a Windows Credential Manager-protected Password Vault, privacy-first direct TLS Ghosium Mail, strict tracking prevention, coordinated overlays, startup smoke testing and Memory Saver with a 320-tab scheduler. Includes Portable.exe, Setup.exe and SHA256 checksums."
 
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag artifacts/Ghost-Browser-Portable.exe artifacts/Ghost-Browser-Setup.exe artifacts/SHA256SUMS.txt --clobber --repo $env:GITHUB_REPOSITORY
-            gh release edit $tag --title $title --notes $notes --repo $env:GITHUB_REPOSITORY
-          } else {
-            gh release create $tag artifacts/Ghost-Browser-Portable.exe artifacts/Ghost-Browser-Setup.exe artifacts/SHA256SUMS.txt --target $env:GITHUB_SHA --title $title --notes $notes --repo $env:GITHUB_REPOSITORY
+            Write-Host "Release $tag already exists. Existing release assets are immutable; skipping publication."
+            exit 0
           }
+
+          gh release create $tag artifacts/Ghosium-Browser-Portable.exe artifacts/Ghosium-Browser-Setup.exe artifacts/SHA256SUMS.txt --target $env:GITHUB_SHA --title $title --notes $notes --repo $env:GITHUB_REPOSITORY

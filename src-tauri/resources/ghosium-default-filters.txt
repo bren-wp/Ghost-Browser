@@ -1,5 +1,5 @@
-! Ghost Browser built-in network privacy filters
-! Rules are bundled with the application; Ghost does not download filter lists at startup.
+! Ghosium Browser built-in network privacy filters
+! Rules are bundled with the application; Ghosium does not download filter lists at startup.
 ! Adblock Plus compatible network-filter syntax consumed by adblock-rust.
 
 ! Google / DoubleClick advertising and analytics

@@ -6,7 +6,7 @@ use adblock::{
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-const DEFAULT_FILTERS: &str = include_str!("../resources/ghost-default-filters.txt");
+const DEFAULT_FILTERS: &str = include_str!("../resources/ghosium-default-filters.txt");
 
 #[derive(Clone)]
 pub struct PrivacyEngine {

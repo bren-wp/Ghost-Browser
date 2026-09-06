@@ -3,8 +3,7 @@ use crate::{
     vault::{delete_secret, mail_secret_target, read_secret, store_secret},
 };
 use lettre::{
-    Message, SmtpTransport, Transport,
-    message::header::ContentType,
+    Message, SmtpTransport, Transport, message::header::ContentType,
     transport::smtp::authentication::Credentials,
 };
 use native_tls::TlsConnector;
@@ -55,10 +54,12 @@ fn validate_account_transport(
         return Err("Port nije valjan".into());
     }
     if imap_port != 993 {
-        return Err("Ghost Mail podržava samo IMAP preko izravnog TLS-a na portu 993".into());
+        return Err("Ghosium Mail podržava samo IMAP preko izravnog TLS-a na portu 993".into());
     }
     if smtp_port != 465 && smtp_port != 587 {
-        return Err("Ghost Mail podržava SMTP TLS na portu 465 ili obavezni STARTTLS na portu 587".into());
+        return Err(
+            "Ghosium Mail podržava SMTP TLS na portu 465 ili obavezni STARTTLS na portu 587".into(),
+        );
     }
     Ok((imap_host, smtp_host))
 }
@@ -105,7 +106,10 @@ fn smtp_transport(account: &MailAccount, password: &str) -> Result<SmtpTransport
 
     Ok(builder
         .port(account.smtp_port)
-        .credentials(Credentials::new(account.email.clone(), password.to_string()))
+        .credentials(Credentials::new(
+            account.email.clone(),
+            password.to_string(),
+        ))
         .timeout(Some(NETWORK_TIMEOUT))
         .build())
 }
@@ -168,7 +172,11 @@ fn fetch_inbox_blocking(
     }
 
     let count = limit.clamp(1, MAX_MAIL_LIST) as u32;
-    let start = mailbox.exists.saturating_sub(count).saturating_add(1).max(1);
+    let start = mailbox
+        .exists
+        .saturating_sub(count)
+        .saturating_add(1)
+        .max(1);
     let range = format!("{start}:{}", mailbox.exists);
     let fetches = session
         .fetch(range, "(UID FLAGS ENVELOPE)")
@@ -330,7 +338,9 @@ pub async fn mail_fetch_inbox(
     limit: Option<usize>,
 ) -> Result<Vec<MailSummary>, String> {
     Uuid::parse_str(&id).map_err(|_| "ID mail računa nije valjan".to_string())?;
-    let account = store.get_mail_account(&id).ok_or("Mail račun nije pronađen")?;
+    let account = store
+        .get_mail_account(&id)
+        .ok_or("Mail račun nije pronađen")?;
     let password = read_secret(&mail_secret_target(&id))?;
     tauri::async_runtime::spawn_blocking(move || {
         fetch_inbox_blocking(account, password, limit.unwrap_or(30))
@@ -348,7 +358,9 @@ pub async fn mail_send(
     body: String,
 ) -> Result<(), String> {
     Uuid::parse_str(&id).map_err(|_| "ID mail računa nije valjan".to_string())?;
-    let account = store.get_mail_account(&id).ok_or("Mail račun nije pronađen")?;
+    let account = store
+        .get_mail_account(&id)
+        .ok_or("Mail račun nije pronađen")?;
     let password = read_secret(&mail_secret_target(&id))?;
     tauri::async_runtime::spawn_blocking(move || {
         send_mail_blocking(account, password, to, subject, body)
@@ -363,10 +375,18 @@ mod tests {
 
     #[test]
     fn only_encrypted_mail_ports_are_accepted() {
-        assert!(validate_account_transport("imap.example.com", 993, "smtp.example.com", 465).is_ok());
-        assert!(validate_account_transport("imap.example.com", 993, "smtp.example.com", 587).is_ok());
-        assert!(validate_account_transport("imap.example.com", 143, "smtp.example.com", 587).is_err());
-        assert!(validate_account_transport("imap.example.com", 993, "smtp.example.com", 25).is_err());
+        assert!(
+            validate_account_transport("imap.example.com", 993, "smtp.example.com", 465).is_ok()
+        );
+        assert!(
+            validate_account_transport("imap.example.com", 993, "smtp.example.com", 587).is_ok()
+        );
+        assert!(
+            validate_account_transport("imap.example.com", 143, "smtp.example.com", 587).is_err()
+        );
+        assert!(
+            validate_account_transport("imap.example.com", 993, "smtp.example.com", 25).is_err()
+        );
     }
 
     #[test]

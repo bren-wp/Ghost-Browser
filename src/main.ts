@@ -49,8 +49,9 @@ interface OmniboxSuggestion {
 interface SuggestionChoice {
   title: string;
   value: string;
-  kind: "input" | "bookmark" | "history";
+  kind: "input" | "tab" | "bookmark" | "history";
   detail: string;
+  tabId?: string;
 }
 
 interface SuggestionState {
@@ -249,6 +250,7 @@ function hideSuggestions(state?: SuggestionState): void {
 }
 
 function suggestionLabel(kind: SuggestionChoice["kind"]): string {
+  if (kind === "tab") return "Prebaci na tab";
   if (kind === "bookmark") return "Favorit";
   if (kind === "history") return "Povijest";
   return "Pretraži ili otvori";
@@ -267,7 +269,7 @@ function renderSuggestions(state: SuggestionState): void {
   state.box.innerHTML = state.items.map((item, index) => {
     const selected = index === state.selected;
     const id = `${state.box.id}-item-${index}`;
-    const glyph = item.kind === "bookmark" ? "★" : item.kind === "history" ? "↻" : "⌕";
+    const glyph = item.kind === "tab" ? "▣" : item.kind === "bookmark" ? "★" : item.kind === "history" ? "↻" : "⌕";
     return `<button type="button" id="${id}" class="omnibox-suggestion${selected ? " selected" : ""}" role="option" aria-selected="${selected}" data-suggestion-index="${index}">
       <span class="suggestion-glyph" aria-hidden="true">${glyph}</span>
       <span class="suggestion-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small></span>
@@ -296,7 +298,27 @@ function buildSuggestionChoices(raw: string, local: OmniboxSuggestion[]): Sugges
     detail: "Pretraživanje ili izravna web-adresa",
   }];
 
+  const needle = value.toLocaleLowerCase("hr-HR");
+  let tabMatches = 0;
+  for (const tab of tabs) {
+    if (tab.id === activeTabId || !tab.url || tabMatches >= 3) continue;
+    const title = tab.title || tab.url;
+    if (!title.toLocaleLowerCase("hr-HR").includes(needle)
+        && !tab.url.toLocaleLowerCase("hr-HR").includes(needle)) {
+      continue;
+    }
+    choices.push({
+      title,
+      value: tab.url,
+      kind: "tab",
+      detail: tab.url,
+      tabId: tab.id,
+    });
+    tabMatches += 1;
+  }
+
   for (const item of local) {
+    if (choices.some((choice) => choice.value === item.url && choice.kind !== "input")) continue;
     choices.push({
       title: item.title || item.url,
       value: item.url,
@@ -304,7 +326,7 @@ function buildSuggestionChoices(raw: string, local: OmniboxSuggestion[]): Sugges
       detail: item.url,
     });
   }
-  return choices;
+  return choices.slice(0, 9);
 }
 
 function scheduleSuggestions(state: SuggestionState, delay = 55): void {
@@ -331,9 +353,14 @@ function scheduleSuggestions(state: SuggestionState, delay = 55): void {
 async function chooseSuggestion(state: SuggestionState, index: number): Promise<void> {
   const choice = state.items[index];
   if (!choice) return;
-  const value = choice.value;
   hideSuggestions();
-  await navigateRaw(value);
+
+  if (choice.kind === "tab" && choice.tabId) {
+    await activateTab(choice.tabId);
+    return;
+  }
+
+  await navigateRaw(choice.value);
   if (state.clearAfterNavigate) state.input.value = "";
 }
 

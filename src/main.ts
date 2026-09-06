@@ -72,7 +72,7 @@ app.innerHTML = `
   <main class="browser-shell">
     <header class="browser-chrome" id="browser-chrome">
       <div class="tabstrip drag-region" id="drag-region">
-        <div class="brand" aria-label="Ghost Browser"><span class="ghost-mark">G</span></div>
+        <div class="brand" aria-label="Ghosium Browser"><span class="ghosium-mark">G</span></div>
         <div class="tabs" id="tabs"></div>
         <button class="chrome-button new-tab-button no-drag" id="new-tab" title="Novi tab" aria-label="Novi tab">+</button>
         <div class="window-controls no-drag">
@@ -93,7 +93,7 @@ app.innerHTML = `
                  maxlength="8192" aria-label="Adresa i pretraživanje" aria-autocomplete="list"
                  aria-controls="omnibox-suggestions" aria-expanded="false"
                  placeholder="Pretraži web ili upiši web-adresu" />
-          <button type="button" id="shield" class="shield" title="Ghost zaštita" aria-label="Ghost zaštita">
+          <button type="button" id="shield" class="shield" title="Ghosium zaštita" aria-label="Ghosium zaštita">
             <span class="shield-icon">◆</span><span id="blocked-count">0</span>
           </button>
           <div id="omnibox-suggestions" class="omnibox-suggestions" role="listbox" aria-label="Prijedlozi pretraživanja"></div>
@@ -106,7 +106,7 @@ app.innerHTML = `
     <section class="newtab" id="newtab">
       <div class="newtab-inner">
         <div class="hero-mark">G</div>
-        <h1>Ghost Browser</h1>
+        <h1>Ghosium Browser</h1>
         <p>Brzo. Privatno. Pod vašom kontrolom.</p>
         <form id="newtab-search" class="newtab-search suggestion-host" autocomplete="off">
           <span aria-hidden="true">⌕</span>
@@ -126,15 +126,15 @@ app.innerHTML = `
 
     <aside class="panel" id="privacy-panel" aria-hidden="true">
       <div class="panel-header">
-        <div><small>GHOST ZAŠTITA</small><h2>Privatnost</h2></div>
+        <div><small>GHOSIUM ZAŠTITA</small><h2>Privatnost</h2></div>
         <button id="close-panel" class="icon-button" aria-label="Zatvori">×</button>
       </div>
       <div class="panel-status">
         <span class="status-dot"></span>
-        <div><strong>Zaštita je uključena</strong><p>Ghost Browser nema vlastitu analitiku, oglase ni korisničke profile.</p></div>
+        <div><strong>Zaštita je uključena</strong><p>Ghosium Browser nema vlastitu analitiku, oglase ni korisničke profile.</p></div>
       </div>
       <div class="setting"><div><strong>Reklame i trackeri</strong><span>Blokiranje poznatih mreža za oglašavanje i praćenje</span></div><span class="status-badge">Uključeno</span></div>
-      <div class="setting"><div><strong>Dozvole web-stranice</strong><span>Kamera, mikrofon i lokacija traže dopuštenje nakon vaše radnje; Ghost odluku ne sprema trajno</span></div><span class="status-badge">Na zahtjev</span></div>
+      <div class="setting"><div><strong>Dozvole web-stranice</strong><span>Kamera, mikrofon i lokacija traže dopuštenje nakon vaše radnje; Ghosium odluku ne sprema trajno</span></div><span class="status-badge">Na zahtjev</span></div>
       <div class="setting"><div><strong>Privacy signali</strong><span>Do Not Track i Global Privacy Control</span></div><span class="status-badge">Uključeno</span></div>
       <div class="panel-actions"><button id="clear-data" class="primary-button">Obriši podatke pregledavanja</button></div>
     </aside>
@@ -147,7 +147,7 @@ app.innerHTML = `
       <div class="menu-status" id="memory-status">Memory Saver</div>
       <button class="menu-item" id="menu-clear-data"><span>Obriši podatke pregledavanja</span></button>
       <div class="menu-separator"></div>
-      <div class="menu-footer"><strong>Ghost Browser</strong><span>Privatno pregledavanje za Windows</span></div>
+      <div class="menu-footer"><strong>Ghosium Browser</strong><span>Privatno pregledavanje za Windows</span></div>
     </aside>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -816,7 +816,7 @@ window.addEventListener("keydown", (event) => {
   }
 });
 
-await listen<TabEvent>("ghost://tab-event", (event) => {
+await listen<TabEvent>("ghosium://tab-event", (event) => {
   const update = event.payload;
   const tab = tabs.find((item) => item.id === update.id);
   if (!tab) return;
@@ -835,14 +835,14 @@ await listen<TabEvent>("ghost://tab-event", (event) => {
   scheduleMemoryStatusRefresh();
 });
 
-await listen<PopupNavigation>("ghost://open-current-tab", (event) => {
+await listen<PopupNavigation>("ghosium://open-current-tab", (event) => {
   const payload = event.payload;
   if (!payload?.tabId || !payload?.url) return;
   if (!tabs.some((tab) => tab.id === payload.tabId)) return;
   void safeAction(() => navigateTab(payload.tabId, payload.url));
 });
 
-await listen<{ url?: string }>("ghost://download", () => {
+await listen<{ url?: string }>("ghosium://download", () => {
   showToast("Preuzimanje je pokrenuto.");
 });
 

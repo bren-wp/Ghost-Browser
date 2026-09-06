@@ -1,8 +1,7 @@
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::{
-    env,
-    fs,
+    env, fs,
     io::Write,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
@@ -18,6 +17,11 @@ const MAX_VAULT_ENTRIES: usize = 500;
 const MAX_MAIL_ACCOUNTS: usize = 20;
 const MAX_TEXT: usize = 2_048;
 const MAX_URL: usize = 8_192;
+
+// Serializes filesystem operations even if more than one ProfileStore is ever
+// created in-process. The application normally owns one managed store, but this
+// also prevents temp/backup rename races in tests and defensive recovery paths.
+static PROFILE_IO_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -110,7 +114,9 @@ fn profile_path() -> PathBuf {
     let base = env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(env::temp_dir);
-    base.join("Ghost Browser").join("Profile").join("profile.json")
+    base.join("Ghosium Browser")
+        .join("Profile")
+        .join("profile.json")
 }
 
 fn sanitize_text(input: &str, field: &str) -> Result<String, String> {
@@ -145,11 +151,20 @@ pub fn normalize_origin(input: &str) -> Result<String, String> {
         return Err("Domena nije valjana".into());
     }
     let host = url.host_str().unwrap_or_default();
-    let port = url.port().map(|value| format!(":{value}")).unwrap_or_default();
-    Ok(format!("{}://{}{}", url.scheme(), host.to_ascii_lowercase(), port))
+    let port = url
+        .port()
+        .map(|value| format!(":{value}"))
+        .unwrap_or_default();
+    Ok(format!(
+        "{}://{}{}",
+        url.scheme(),
+        host.to_ascii_lowercase(),
+        port
+    ))
 }
 
 fn write_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
+    let _io_guard = PROFILE_IO_LOCK.lock();
     let parent = path.parent().ok_or("Putanja profila nije valjana")?;
     fs::create_dir_all(parent).map_err(|error| error.to_string())?;
 
@@ -183,7 +198,7 @@ fn parse_profile(bytes: &[u8]) -> Option<ProfileData> {
     Some(data)
 }
 
-fn restore_backup(path: &Path) -> Option<ProfileData> {
+fn restore_backup_unlocked(path: &Path) -> Option<ProfileData> {
     let backup = path.with_extension("json.bak");
     let bytes = fs::read(&backup).ok()?;
     let data = parse_profile(&bytes)?;
@@ -198,6 +213,7 @@ fn restore_backup(path: &Path) -> Option<ProfileData> {
 }
 
 fn load_profile(path: &Path) -> ProfileData {
+    let _io_guard = PROFILE_IO_LOCK.lock();
     match fs::read(path) {
         Ok(bytes) => {
             if let Some(data) = parse_profile(&bytes) {
@@ -210,17 +226,25 @@ fn load_profile(path: &Path) -> ProfileData {
         Err(_) => {}
     }
 
-    restore_backup(path).unwrap_or_default()
+    restore_backup_unlocked(path).unwrap_or_default()
 }
 
 impl ProfileStore {
     pub fn new() -> Self {
-        let path = profile_path();
+        Self::from_path(profile_path())
+    }
+
+    fn from_path(path: PathBuf) -> Self {
         let data = load_profile(&path);
         Self {
             path,
             data: Mutex::new(data),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_for_test(path: PathBuf) -> Self {
+        Self::from_path(path)
     }
 
     fn persist_locked(&self, data: &ProfileData) -> Result<(), String> {
@@ -399,7 +423,12 @@ impl ProfileStore {
     }
 
     pub fn get_vault(&self, id: &str) -> Option<VaultEntry> {
-        self.data.lock().vault.iter().find(|item| item.id == id).cloned()
+        self.data
+            .lock()
+            .vault
+            .iter()
+            .find(|item| item.id == id)
+            .cloned()
     }
 
     pub fn remove_vault_metadata(&self, id: &str) -> Result<bool, String> {
@@ -442,7 +471,11 @@ impl ProfileStore {
         if data.mail_accounts.len() >= MAX_MAIL_ACCOUNTS {
             return Err("Dosegnut je limit mail računa".into());
         }
-        if data.mail_accounts.iter().any(|item| item.email.eq_ignore_ascii_case(&email)) {
+        if data
+            .mail_accounts
+            .iter()
+            .any(|item| item.email.eq_ignore_ascii_case(&email))
+        {
             return Err("Ovaj mail račun već postoji".into());
         }
 
@@ -484,7 +517,9 @@ impl ProfileStore {
 }
 
 #[tauri::command]
-pub async fn list_bookmarks(store: tauri::State<'_, ProfileStore>) -> Result<Vec<Bookmark>, String> {
+pub async fn list_bookmarks(
+    store: tauri::State<'_, ProfileStore>,
+) -> Result<Vec<Bookmark>, String> {
     Ok(store.list_bookmarks())
 }
 
@@ -554,7 +589,7 @@ mod tests {
 
     fn temp_profile_path(name: &str) -> PathBuf {
         env::temp_dir()
-            .join(format!("ghost-browser-{name}-{}", Uuid::new_v4()))
+            .join(format!("ghosium-browser-{name}-{}", Uuid::new_v4()))
             .join("profile.json")
     }
 
@@ -563,7 +598,7 @@ mod tests {
             version: PROFILE_VERSION,
             bookmarks: vec![Bookmark {
                 id: Uuid::new_v4().to_string(),
-                title: "Ghost test".into(),
+                title: "Ghosium test".into(),
                 url: "https://example.com/".into(),
                 created_at: 1,
             }],
@@ -595,14 +630,18 @@ mod tests {
         let parent = path.parent().unwrap();
         fs::create_dir_all(parent).unwrap();
         let backup = path.with_extension("json.bak");
-        fs::write(&backup, serde_json::to_vec_pretty(&sample_profile()).unwrap()).unwrap();
+        fs::write(
+            &backup,
+            serde_json::to_vec_pretty(&sample_profile()).unwrap(),
+        )
+        .unwrap();
 
         let loaded = load_profile(&path);
         assert_eq!(loaded.bookmarks.len(), 1);
         assert!(path.exists());
         assert!(!backup.exists());
 
-        let _ = fs::remove_dir_all(parent.parent().unwrap_or(parent));
+        let _ = fs::remove_dir_all(parent);
     }
 
     #[test]
@@ -612,13 +651,17 @@ mod tests {
         fs::create_dir_all(parent).unwrap();
         fs::write(&path, b"{not valid json").unwrap();
         let backup = path.with_extension("json.bak");
-        fs::write(&backup, serde_json::to_vec_pretty(&sample_profile()).unwrap()).unwrap();
+        fs::write(
+            &backup,
+            serde_json::to_vec_pretty(&sample_profile()).unwrap(),
+        )
+        .unwrap();
 
         let loaded = load_profile(&path);
         assert_eq!(loaded.bookmarks.len(), 1);
         assert!(path.exists());
         assert!(!backup.exists());
 
-        let _ = fs::remove_dir_all(parent.parent().unwrap_or(parent));
+        let _ = fs::remove_dir_all(parent);
     }
 }

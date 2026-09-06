@@ -79,7 +79,7 @@ button {
   margin: 0 2px 2px 0;
 }
 
-.ghost-mark,
+.ghosium-mark,
 .hero-mark {
   display: grid;
   place-items: center;
@@ -90,7 +90,7 @@ button {
   box-shadow: 0 8px 28px rgba(114, 134, 255, 0.25);
 }
 
-.ghost-mark {
+.ghosium-mark {
   width: 25px;
   height: 25px;
   border-radius: 9px 9px 12px 12px;

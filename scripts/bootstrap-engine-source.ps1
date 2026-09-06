@@ -3,7 +3,10 @@ param(
   [string]$Destination = 'engine-work',
 
   [Parameter(Mandatory = $false)]
-  [switch]$SkipHooks
+  [switch]$SkipHooks,
+
+  [Parameter(Mandatory = $false)]
+  [switch]$ReuseExisting
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,38 +24,69 @@ if (!$fetchCommand -or !$gclientCommand) {
   throw 'Chromium depot_tools must be installed and on PATH before bootstrapping the full-source checkout.'
 }
 
+if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+  $env:DEPOT_TOOLS_WIN_TOOLCHAIN = '0'
+}
+
 $destinationPath = [IO.Path]::GetFullPath((Join-Path (Get-Location) $Destination))
+$src = Join-Path $destinationPath 'src'
+$existingItems = @()
 if (Test-Path $destinationPath) {
   $existingItems = @(Get-ChildItem $destinationPath -Force -ErrorAction SilentlyContinue)
-  if ($existingItems.Count -gt 0) {
-    throw "Destination must be empty or absent: $destinationPath"
+}
+
+$reuseCheckout = $existingItems.Count -gt 0
+if ($reuseCheckout -and !$ReuseExisting) {
+  throw "Destination is not empty. Pass -ReuseExisting only for a controlled Chromium builder checkout: $destinationPath"
+}
+
+if ($reuseCheckout) {
+  if (!(Test-Path (Join-Path $src '.git')) -or !(Test-Path (Join-Path $destinationPath '.gclient') -PathType Leaf)) {
+    throw "Existing destination is not a reusable Chromium depot_tools checkout: $destinationPath"
+  }
+
+  Write-Host "Reusing controlled Chromium checkout at $destinationPath"
+  & git -C $src reset --hard HEAD
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Unable to reset the reusable Chromium checkout.'
+  }
+  & git -C $src clean -ffd
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Unable to remove untracked source files from the reusable Chromium checkout.'
   }
 } else {
   New-Item -ItemType Directory -Path $destinationPath -Force | Out-Null
+  Push-Location $destinationPath
+  try {
+    Write-Host "Fetching Chromium source for Ghosium into $destinationPath"
+    & $fetchCommand.Source --nohooks --no-history chromium
+    if ($LASTEXITCODE -ne 0) {
+      throw "Chromium fetch failed with exit code $LASTEXITCODE"
+    }
+  } finally {
+    Pop-Location
+  }
+
+  if (!(Test-Path (Join-Path $src '.git'))) {
+    throw 'Chromium fetch did not produce the expected src Git checkout.'
+  }
+}
+
+& git -C $src fetch origin $sourceRevision --no-tags
+if ($LASTEXITCODE -ne 0) {
+  throw "Unable to fetch pinned Chromium commit $sourceRevision"
+}
+& git -C $src checkout --detach $sourceRevision
+if ($LASTEXITCODE -ne 0) {
+  throw "Unable to detach Chromium checkout at $sourceRevision"
+}
+& git -C $src reset --hard $sourceRevision
+if ($LASTEXITCODE -ne 0) {
+  throw "Unable to reset Chromium checkout to pinned revision $sourceRevision"
 }
 
 Push-Location $destinationPath
 try {
-  Write-Host "Fetching Chromium source for Ghosium into $destinationPath"
-  & $fetchCommand.Source --nohooks chromium
-  if ($LASTEXITCODE -ne 0) {
-    throw "Chromium fetch failed with exit code $LASTEXITCODE"
-  }
-
-  $src = Join-Path $destinationPath 'src'
-  if (!(Test-Path (Join-Path $src '.git'))) {
-    throw 'Chromium fetch did not produce the expected src Git checkout.'
-  }
-
-  & git -C $src fetch origin $sourceRevision --no-tags
-  if ($LASTEXITCODE -ne 0) {
-    throw "Unable to fetch pinned Chromium commit $sourceRevision"
-  }
-  & git -C $src checkout --detach $sourceRevision
-  if ($LASTEXITCODE -ne 0) {
-    throw "Unable to detach Chromium checkout at $sourceRevision"
-  }
-
   $syncArguments = @('sync', '--with_branch_heads', '--with_tags', '--revision', "src@$sourceRevision")
   if ($SkipHooks) {
     $syncArguments += '--nohooks'
@@ -68,14 +102,14 @@ try {
       throw "gclient runhooks failed with exit code $LASTEXITCODE"
     }
   }
-
-  $actualRevision = (& git -C $src rev-parse HEAD).Trim()
-  if ($actualRevision -ne $sourceRevision) {
-    throw "Checkout drifted from pinned revision. Expected $sourceRevision; found $actualRevision"
-  }
-
-  Write-Host "Pinned Chromium source ready at $src"
-  Write-Host "Next: $PSScriptRoot/apply-engine-branding.ps1 -SourceRoot '$src'"
 } finally {
   Pop-Location
 }
+
+$actualRevision = (& git -C $src rev-parse HEAD).Trim()
+if ($actualRevision -ne $sourceRevision) {
+  throw "Checkout drifted from pinned revision. Expected $sourceRevision; found $actualRevision"
+}
+
+Write-Host "Pinned Chromium source ready at $src"
+Write-Host "Next: $PSScriptRoot/apply-engine-branding.ps1 -SourceRoot '$src'"

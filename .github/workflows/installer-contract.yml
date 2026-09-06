@@ -94,9 +94,6 @@ jobs:
             exit 1
           fi
 
-          # Remove NSIS comment text before checking executable directives. This
-          # allows documentation to explain the forbidden architecture without
-          # treating words in comments as active installer commands.
           active_nsi="$(sed 's/[[:space:]]*;.*$//' installer/ghosium.nsi)"
           if printf '%s\n' "$active_nsi" | grep -nE 'WriteUninstaller|MUI_UNPAGE_|Section[[:space:]]+"Uninstall"|Uninstall\.exe'; then
             echo 'installer/ghosium.nsi must use the setup executable for uninstall instead of generating a standalone uninstaller.' >&2
@@ -116,24 +113,24 @@ jobs:
 
           text = Path('installer/ghosium.nsi').read_text(encoding='utf-8')
           required = [
-              r'!define INSTALLED_SETUP "Installer\Ghosium-Browser-Setup.exe"',
-              r'!define INSTALL_MARKER "ghosium-install.marker"',
-              r'!define CLEANUP_SETUP "$TEMP\Brendigo\Ghosium Browser Cleanup\Ghosium-Browser-Setup.exe"',
-              r'${GetOptions} $R0 "/UNINSTALL" $R1',
-              r'${GetOptions} $R0 "/CLEANUP" $R1',
-              r'CopyFiles /SILENT "$EXEPATH" "$INSTDIR\${INSTALLED_SETUP}"',
-              r'CopyFiles /SILENT "$EXEPATH" "${CLEANUP_SETUP}"',
-              r'Exec '\''"${CLEANUP_SETUP}" /CLEANUP'\''',
-              r'Exec '\''"${CLEANUP_SETUP}" /CLEANUP /S'\''',
-              r'IfFileExists "$INSTDIR\${INSTALL_MARKER}" 0 unsafe_install_location',
-              r'IfFileExists "$INSTDIR\${INSTALLED_SETUP}" 0 unsafe_install_location',
-              r'install_location_verified unsafe_install_location',
-              r'RMDir /r /REBOOTOK "$INSTDIR"',
-              r'Delete /REBOOTOK "$EXEPATH"',
-              r'"UninstallString"',
-              r'"QuietUninstallString"',
-              r'/UNINSTALL',
-              r'/UNINSTALL /S',
+              r'!define INSTALLED_SETUP "Installer\Ghosium-Browser-Setup.exe"'.replace(r'\"', '"'),
+              r'!define INSTALL_MARKER "ghosium-install.marker"'.replace(r'\"', '"'),
+              r'!define CLEANUP_SETUP "$TEMP\Brendigo\Ghosium Browser Cleanup\Ghosium-Browser-Setup.exe"'.replace(r'\"', '"'),
+              '${GetOptions} $R0 "/UNINSTALL" $R1',
+              '${GetOptions} $R0 "/CLEANUP" $R1',
+              r'CopyFiles /SILENT "$EXEPATH" "$INSTDIR\${INSTALLED_SETUP}"'.replace(r'\"', '"'),
+              r'CopyFiles /SILENT "$EXEPATH" "${CLEANUP_SETUP}"'.replace(r'\"', '"'),
+              "Exec '\"${CLEANUP_SETUP}\" /CLEANUP'",
+              "Exec '\"${CLEANUP_SETUP}\" /CLEANUP /S'",
+              r'IfFileExists "$INSTDIR\${INSTALL_MARKER}" 0 unsafe_install_location'.replace(r'\"', '"'),
+              r'IfFileExists "$INSTDIR\${INSTALLED_SETUP}" 0 unsafe_install_location'.replace(r'\"', '"'),
+              'install_location_verified unsafe_install_location',
+              r'RMDir /r /REBOOTOK "$INSTDIR"'.replace(r'\"', '"'),
+              r'Delete /REBOOTOK "$EXEPATH"'.replace(r'\"', '"'),
+              '"UninstallString"',
+              '"QuietUninstallString"',
+              '/UNINSTALL',
+              '/UNINSTALL /S',
           ]
           missing = [needle for needle in required if needle not in text]
           if missing:

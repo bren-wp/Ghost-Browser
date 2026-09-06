@@ -71,12 +71,12 @@ jobs:
           trap 'kill $server_pid 2>/dev/null || true' EXIT
           sleep 1
 
-          curl --fail --silent --show-error http://127.0.0.1:8100/ | grep -q 'Ghosium Store'
-          curl --fail --silent --show-error http://127.0.0.1:8100/api/catalog.php | grep -q '"schemaVersion":1'
-          curl --fail --silent --show-error 'http://127.0.0.1:8100/api/update.php?id=ghosium-search&version=0.7.0' | grep -q '"updateAvailable":false'
-          curl --fail --silent --show-error http://127.0.0.1:8100/api/revocations.php | grep -q '"revocations":[]'
-          curl --fail --silent --show-error http://127.0.0.1:8100/api/keys.php | grep -q '"keys":[]'
+          curl --fail --silent --show-error http://127.0.0.1:8100/ | grep -Fq 'Ghosium Store'
+          curl --fail --silent --show-error http://127.0.0.1:8100/api/catalog.php | grep -Fq '"schemaVersion":1'
+          curl --fail --silent --show-error 'http://127.0.0.1:8100/api/update.php?id=ghosium-search&version=0.7.0' | grep -Fq '"updateAvailable":false'
+          curl --fail --silent --show-error http://127.0.0.1:8100/api/revocations.php | grep -Fq '"revocations":[]'
+          curl --fail --silent --show-error http://127.0.0.1:8100/api/keys.php | grep -Fq '"keys":[]'
 
           status=$(curl --silent --output /tmp/store-invalid.json --write-out '%{http_code}' 'http://127.0.0.1:8100/api/update.php?id=BAD%20ID&version=x')
           test "$status" = '400'
-          grep -q '"error":"invalid_request"' /tmp/store-invalid.json
+          grep -Fq '"error":"invalid_request"' /tmp/store-invalid.json

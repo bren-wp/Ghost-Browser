@@ -33,12 +33,15 @@ jobs:
           }
 
           $matches = @(git grep -I -n -i -- $legacy -- . 2>$null)
-          if ($LASTEXITCODE -eq 0) {
+          $grepExit = $LASTEXITCODE
+          if ($grepExit -eq 0) {
             throw "Legacy product branding remains in tracked text:`n$($matches -join "`n")"
           }
-          if ($LASTEXITCODE -ne 1) {
-            throw "Branding scan failed with exit code $LASTEXITCODE"
+          if ($grepExit -ne 1) {
+            throw "Branding scan failed with exit code $grepExit"
           }
+          Write-Host "Ghosium-only branding validated."
+          exit 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v5

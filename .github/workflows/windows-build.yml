@@ -91,13 +91,15 @@ jobs:
 
           $tag = "v$version"
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
-          $exists = $LASTEXITCODE -eq 0
+          $releaseLookupExit = $LASTEXITCODE
+          $exists = $releaseLookupExit -eq 0
           $publish = ($env:GITHUB_EVENT_NAME -eq "push" -and $env:GITHUB_REF -eq "refs/heads/main" -and -not $exists)
 
           "version=$version" >> $env:GITHUB_OUTPUT
           "revision=$revision" >> $env:GITHUB_OUTPUT
           "publish=$($publish.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           Write-Host "Ghosium $version; Chromium snapshot $revision; publish=$publish"
+          exit 0
 
       - name: Download official Chromium runtime
         id: chromium

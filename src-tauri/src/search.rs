@@ -79,8 +79,8 @@ fn build_direct_url(input: &str) -> Result<Option<String>, String> {
         return Ok(None);
     }
 
-    let http_probe = Url::parse(&format!("http://{input}"))
-        .map_err(|_| "Neispravna web-adresa".to_string())?;
+    let http_probe =
+        Url::parse(&format!("http://{input}")).map_err(|_| "Neispravna web-adresa".to_string())?;
     let host = http_probe
         .host_str()
         .ok_or_else(|| "Neispravna web-adresa".to_string())?;
@@ -132,8 +132,8 @@ mod tests {
 
     #[test]
     fn plain_text_becomes_encoded_search_without_tracking_identifiers() {
-        let url = resolve_omnibox("ghosium browser privatnost")
-            .expect("search URL should be generated");
+        let url =
+            resolve_omnibox("ghosium browser privatnost").expect("search URL should be generated");
         assert_eq!(
             url,
             "https://search.brave.com/search?q=ghosium+browser+privatnost"

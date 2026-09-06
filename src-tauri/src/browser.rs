@@ -1,4 +1,4 @@
-use crate::privacy::{PrivacyEngine, DOCUMENT_START_SCRIPT};
+use crate::privacy::{DOCUMENT_START_SCRIPT, PrivacyEngine};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -16,8 +16,7 @@ use uuid::Uuid;
 const MAX_URL_LENGTH: usize = 8192;
 const MAX_TABS: usize = 512;
 const MAX_LIVE_WEBVIEWS: usize = 8;
-const PRIVACY_BROWSER_ARGS: &str =
-    "--disable-sync --no-first-run --disable-default-apps --disable-domain-reliability --disable-breakpad --disable-crash-reporter";
+const PRIVACY_BROWSER_ARGS: &str = "--disable-sync --no-first-run --disable-default-apps --disable-domain-reliability --disable-breakpad --disable-crash-reporter";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -297,11 +296,7 @@ fn discard_tab_webview(
     Ok(true)
 }
 
-fn enforce_live_budget(
-    app: &AppHandle,
-    state: &BrowserState,
-    keep_id: &str,
-) -> Result<(), String> {
+fn enforce_live_budget(app: &AppHandle, state: &BrowserState, keep_id: &str) -> Result<(), String> {
     loop {
         let active_id = state.active.lock().clone();
         let candidate = {
@@ -538,7 +533,9 @@ fn webview_or_restore(
 #[tauri::command]
 pub async fn create_tab(state: State<'_, BrowserState>) -> Result<TabSnapshot, String> {
     if state.tabs.lock().len() >= MAX_TABS {
-        return Err(format!("Dosegnut je sigurnosni limit od {MAX_TABS} otvorenih tabova"));
+        return Err(format!(
+            "Dosegnut je sigurnosni limit od {MAX_TABS} otvorenih tabova"
+        ));
     }
 
     let id = Uuid::new_v4().to_string();
@@ -834,7 +831,11 @@ pub async fn discard_inactive_tabs(
             if live_webview_count(&tabs) <= 1 {
                 break;
             }
-            select_discard_candidate(&tabs, active_id.as_deref(), active_id.as_deref().unwrap_or(""))
+            select_discard_candidate(
+                &tabs,
+                active_id.as_deref(),
+                active_id.as_deref().unwrap_or(""),
+            )
         };
 
         let Some(candidate) = candidate else {
@@ -904,17 +905,17 @@ mod tests {
         assert_eq!(live_webview_count(&tabs), MAX_LIVE_WEBVIEWS);
         assert!(tabs.get(active).unwrap().webview_label.is_some());
         assert_eq!(
-            tabs.values().filter(|record| record.snapshot.discarded).count(),
+            tabs.values()
+                .filter(|record| record.snapshot.discarded)
+                .count(),
             320 - MAX_LIVE_WEBVIEWS
         );
     }
 
     #[test]
     fn tracker_parameters_are_removed_without_damaging_regular_query_data() {
-        let url = validate_url(
-            "https://example.com/page?utm_source=test&id=42&fbclid=x&srsltid=y",
-        )
-        .expect("valid URL");
+        let url = validate_url("https://example.com/page?utm_source=test&id=42&fbclid=x&srsltid=y")
+            .expect("valid URL");
         assert_eq!(url.as_str(), "https://example.com/page?id=42");
     }
 

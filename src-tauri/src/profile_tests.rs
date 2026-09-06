@@ -45,11 +45,29 @@ fn local_profile_round_trip_persists_library_metadata() {
     drop(store);
 
     let restored = ProfileStore::new_for_test(profile_path);
-    assert!(restored.list_bookmarks().iter().any(|item| item.id == bookmark.id));
-    assert!(restored.list_history(10_000).iter().any(|item| item.url == history_url));
-    assert!(restored.list_downloads(2_000).iter().any(|item| item.url == download_url));
+    assert!(
+        restored
+            .list_bookmarks()
+            .iter()
+            .any(|item| item.id == bookmark.id)
+    );
+    assert!(
+        restored
+            .list_history(10_000)
+            .iter()
+            .any(|item| item.url == history_url)
+    );
+    assert!(
+        restored
+            .list_downloads(2_000)
+            .iter()
+            .any(|item| item.url == download_url)
+    );
     assert_eq!(
-        restored.get_vault(&vault.id).as_ref().map(|item| item.username.as_str()),
+        restored
+            .get_vault(&vault.id)
+            .as_ref()
+            .map(|item| item.username.as_str()),
         Some(vault_user.as_str())
     );
     assert_eq!(

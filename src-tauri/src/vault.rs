@@ -1,4 +1,4 @@
-use crate::profile::{normalize_origin, ProfileStore, VaultEntry};
+use crate::profile::{ProfileStore, VaultEntry, normalize_origin};
 use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 
@@ -24,8 +24,8 @@ pub fn store_secret(target: &str, username: &str, secret: &str) -> Result<(), St
     use windows_sys::Win32::{
         Foundation::FILETIME,
         Security::Credentials::{
-            CREDENTIALW, CRED_MAX_CREDENTIAL_BLOB_SIZE, CRED_PERSIST_LOCAL_MACHINE,
-            CRED_TYPE_GENERIC, CredWriteW,
+            CRED_MAX_CREDENTIAL_BLOB_SIZE, CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC,
+            CREDENTIALW, CredWriteW,
         },
     };
 
@@ -65,7 +65,9 @@ pub fn store_secret(target: &str, username: &str, secret: &str) -> Result<(), St
     let ok = unsafe { CredWriteW(&credential, 0) };
     blob.fill(0);
     if ok == 0 {
-        return Err(win_error("Windows nije mogao sigurno spremiti vjerodajnicu"));
+        return Err(win_error(
+            "Windows nije mogao sigurno spremiti vjerodajnicu",
+        ));
     }
     Ok(())
 }
@@ -79,7 +81,7 @@ pub fn store_secret(_target: &str, _username: &str, _secret: &str) -> Result<(),
 pub fn read_secret(target: &str) -> Result<String, String> {
     use std::{ptr::null_mut, slice};
     use windows_sys::Win32::Security::Credentials::{
-        CREDENTIALW, CRED_TYPE_GENERIC, CredFree, CredReadW,
+        CRED_TYPE_GENERIC, CREDENTIALW, CredFree, CredReadW,
     };
 
     let target_w = to_wide(target);
@@ -185,10 +187,7 @@ pub async fn vault_save(
 }
 
 #[tauri::command]
-pub async fn vault_delete(
-    store: State<'_, ProfileStore>,
-    id: String,
-) -> Result<bool, String> {
+pub async fn vault_delete(store: State<'_, ProfileStore>, id: String) -> Result<bool, String> {
     Uuid::parse_str(&id).map_err(|_| "ID spremljene prijave nije valjan".to_string())?;
     if store.get_vault(&id).is_none() {
         return Ok(false);
@@ -211,7 +210,10 @@ pub async fn vault_fill(
     let webview = app
         .get_webview(&format!("tab-{tab_id}"))
         .ok_or("Web-stranica nije aktivna")?;
-    let current_url = webview.url().map_err(|error| error.to_string())?.to_string();
+    let current_url = webview
+        .url()
+        .map_err(|error| error.to_string())?
+        .to_string();
     let current_origin = normalize_origin(&current_url)?;
     if current_origin != entry.origin {
         return Err("Spremljena prijava pripada drugoj domeni".into());

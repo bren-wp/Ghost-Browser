@@ -1,8 +1,7 @@
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::{
-    env,
-    fs,
+    env, fs,
     io::Write,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
@@ -152,8 +151,16 @@ pub fn normalize_origin(input: &str) -> Result<String, String> {
         return Err("Domena nije valjana".into());
     }
     let host = url.host_str().unwrap_or_default();
-    let port = url.port().map(|value| format!(":{value}")).unwrap_or_default();
-    Ok(format!("{}://{}{}", url.scheme(), host.to_ascii_lowercase(), port))
+    let port = url
+        .port()
+        .map(|value| format!(":{value}"))
+        .unwrap_or_default();
+    Ok(format!(
+        "{}://{}{}",
+        url.scheme(),
+        host.to_ascii_lowercase(),
+        port
+    ))
 }
 
 fn write_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
@@ -416,7 +423,12 @@ impl ProfileStore {
     }
 
     pub fn get_vault(&self, id: &str) -> Option<VaultEntry> {
-        self.data.lock().vault.iter().find(|item| item.id == id).cloned()
+        self.data
+            .lock()
+            .vault
+            .iter()
+            .find(|item| item.id == id)
+            .cloned()
     }
 
     pub fn remove_vault_metadata(&self, id: &str) -> Result<bool, String> {
@@ -505,7 +517,9 @@ impl ProfileStore {
 }
 
 #[tauri::command]
-pub async fn list_bookmarks(store: tauri::State<'_, ProfileStore>) -> Result<Vec<Bookmark>, String> {
+pub async fn list_bookmarks(
+    store: tauri::State<'_, ProfileStore>,
+) -> Result<Vec<Bookmark>, String> {
     Ok(store.list_bookmarks())
 }
 
@@ -616,7 +630,11 @@ mod tests {
         let parent = path.parent().unwrap();
         fs::create_dir_all(parent).unwrap();
         let backup = path.with_extension("json.bak");
-        fs::write(&backup, serde_json::to_vec_pretty(&sample_profile()).unwrap()).unwrap();
+        fs::write(
+            &backup,
+            serde_json::to_vec_pretty(&sample_profile()).unwrap(),
+        )
+        .unwrap();
 
         let loaded = load_profile(&path);
         assert_eq!(loaded.bookmarks.len(), 1);
@@ -633,7 +651,11 @@ mod tests {
         fs::create_dir_all(parent).unwrap();
         fs::write(&path, b"{not valid json").unwrap();
         let backup = path.with_extension("json.bak");
-        fs::write(&backup, serde_json::to_vec_pretty(&sample_profile()).unwrap()).unwrap();
+        fs::write(
+            &backup,
+            serde_json::to_vec_pretty(&sample_profile()).unwrap(),
+        )
+        .unwrap();
 
         let loaded = load_profile(&path);
         assert_eq!(loaded.bookmarks.len(), 1);

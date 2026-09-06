@@ -1,6 +1,7 @@
 use crate::browser::BrowserState;
 use tauri::{AppHandle, Emitter, Manager, Webview};
 use webview2_com::{
+    CoTaskMemPWSTR,
     Microsoft::Web::WebView2::Win32::{
         COREWEBVIEW2_PERMISSION_KIND_CAMERA, COREWEBVIEW2_PERMISSION_KIND_GEOLOCATION,
         COREWEBVIEW2_PERMISSION_KIND_MICROPHONE, COREWEBVIEW2_PERMISSION_KIND_UNKNOWN_PERMISSION,
@@ -15,7 +16,7 @@ use webview2_com::{
         COREWEBVIEW2_WEB_RESOURCE_CONTEXT_XML_HTTP_REQUEST, ICoreWebView2_2, ICoreWebView2_13,
         ICoreWebView2PermissionRequestedEventArgs3, ICoreWebView2Profile3, ICoreWebView2Settings4,
     },
-    CoTaskMemPWSTR, PermissionRequestedEventHandler, WebResourceRequestedEventHandler, take_pwstr,
+    PermissionRequestedEventHandler, WebResourceRequestedEventHandler, take_pwstr,
 };
 use windows::{
     Win32::System::Com::IStream,
@@ -89,88 +90,91 @@ pub fn install(webview: &Webview, tab_id: String, app: AppHandle) -> Result<(), 
             let app_for_filter = app.clone();
             let tab_for_filter = tab_id.clone();
             let environment_for_filter = environment.clone();
-            let handler = WebResourceRequestedEventHandler::create(Box::new(move |sender, args| {
-                let (Some(sender), Some(args)) = (sender, args) else {
-                    return Ok(());
-                };
-                let request = args.Request()?;
-                let mut uri = PWSTR::null();
-                request.Uri(&mut uri)?;
-                let request_url = take_pwstr(uri);
+            let handler =
+                WebResourceRequestedEventHandler::create(Box::new(move |sender, args| {
+                    let (Some(sender), Some(args)) = (sender, args) else {
+                        return Ok(());
+                    };
+                    let request = args.Request()?;
+                    let mut uri = PWSTR::null();
+                    request.Uri(&mut uri)?;
+                    let request_url = take_pwstr(uri);
 
-                let mut source = PWSTR::null();
-                sender.Source(&mut source)?;
-                let source_url = take_pwstr(source);
+                    let mut source = PWSTR::null();
+                    sender.Source(&mut source)?;
+                    let source_url = take_pwstr(source);
 
-                let mut context = COREWEBVIEW2_WEB_RESOURCE_CONTEXT_OTHER;
-                args.ResourceContext(&mut context)?;
-                let resource_type = adblock_resource_type(context);
+                    let mut context = COREWEBVIEW2_WEB_RESOURCE_CONTEXT_OTHER;
+                    args.ResourceContext(&mut context)?;
+                    let resource_type = adblock_resource_type(context);
 
-                let should_block = context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_PING
-                    || app_for_filter
-                        .try_state::<BrowserState>()
-                        .map(|state| {
-                            state
-                                .privacy
-                                .should_block(&request_url, &source_url, resource_type)
-                        })
-                        .unwrap_or(false);
+                    let should_block = context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_PING
+                        || app_for_filter
+                            .try_state::<BrowserState>()
+                            .map(|state| {
+                                state
+                                    .privacy
+                                    .should_block(&request_url, &source_url, resource_type)
+                            })
+                            .unwrap_or(false);
 
-                if should_block {
-                    let reason = CoTaskMemPWSTR::from("Blocked by Ghosium Browser");
-                    let headers = CoTaskMemPWSTR::from(
-                        "Cache-Control: no-store\r\nContent-Type: text/plain; charset=utf-8",
-                    );
-                    let response = environment_for_filter.CreateWebResourceResponse(
-                        None::<&IStream>,
-                        403,
-                        *reason.as_ref().as_pcwstr(),
-                        *headers.as_ref().as_pcwstr(),
-                    )?;
-                    args.SetResponse(&response)?;
+                    if should_block {
+                        let reason = CoTaskMemPWSTR::from("Blocked by Ghosium Browser");
+                        let headers = CoTaskMemPWSTR::from(
+                            "Cache-Control: no-store\r\nContent-Type: text/plain; charset=utf-8",
+                        );
+                        let response = environment_for_filter.CreateWebResourceResponse(
+                            None::<&IStream>,
+                            403,
+                            *reason.as_ref().as_pcwstr(),
+                            *headers.as_ref().as_pcwstr(),
+                        )?;
+                        args.SetResponse(&response)?;
 
-                    if let Some(state) = app_for_filter.try_state::<BrowserState>() {
-                        if let Some(blocked) = state.increment_blocked(&tab_for_filter) {
-                            let _ = app_for_filter.emit_to(
-                                "main",
-                                "ghosium://tab-event",
-                                serde_json::json!({
-                                    "id": tab_for_filter,
-                                    "blocked": blocked
-                                }),
-                            );
+                        if let Some(state) = app_for_filter.try_state::<BrowserState>() {
+                            if let Some(blocked) = state.increment_blocked(&tab_for_filter) {
+                                let _ = app_for_filter.emit_to(
+                                    "main",
+                                    "ghosium://tab-event",
+                                    serde_json::json!({
+                                        "id": tab_for_filter,
+                                        "blocked": blocked
+                                    }),
+                                );
+                            }
                         }
                     }
-                }
-                Ok(())
-            }));
+                    Ok(())
+                }));
             let mut token = 0_i64;
             let _ = core.add_WebResourceRequested(&handler, &mut token);
 
-            let permission = PermissionRequestedEventHandler::create(Box::new(move |_sender, args| {
-                if let Some(args) = args {
-                    let mut kind = COREWEBVIEW2_PERMISSION_KIND_UNKNOWN_PERMISSION;
-                    let mut user_initiated = BOOL(0);
-                    args.PermissionKind(&mut kind)?;
-                    args.IsUserInitiated(&mut user_initiated)?;
+            let permission =
+                PermissionRequestedEventHandler::create(Box::new(move |_sender, args| {
+                    if let Some(args) = args {
+                        let mut kind = COREWEBVIEW2_PERMISSION_KIND_UNKNOWN_PERMISSION;
+                        let mut user_initiated = BOOL(0);
+                        args.PermissionKind(&mut kind)?;
+                        args.IsUserInitiated(&mut user_initiated)?;
 
-                    if let Ok(args3) = args.cast::<ICoreWebView2PermissionRequestedEventArgs3>() {
-                        let _ = args3.SetSavesInProfile(false);
+                        if let Ok(args3) = args.cast::<ICoreWebView2PermissionRequestedEventArgs3>()
+                        {
+                            let _ = args3.SetSavesInProfile(false);
+                        }
+
+                        let may_prompt = user_initiated.0 != 0
+                            && (kind == COREWEBVIEW2_PERMISSION_KIND_CAMERA
+                                || kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE
+                                || kind == COREWEBVIEW2_PERMISSION_KIND_GEOLOCATION);
+
+                        args.SetState(if may_prompt {
+                            COREWEBVIEW2_PERMISSION_STATE_DEFAULT
+                        } else {
+                            COREWEBVIEW2_PERMISSION_STATE_DENY
+                        })?;
                     }
-
-                    let may_prompt = user_initiated.0 != 0
-                        && (kind == COREWEBVIEW2_PERMISSION_KIND_CAMERA
-                            || kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE
-                            || kind == COREWEBVIEW2_PERMISSION_KIND_GEOLOCATION);
-
-                    args.SetState(if may_prompt {
-                        COREWEBVIEW2_PERMISSION_STATE_DEFAULT
-                    } else {
-                        COREWEBVIEW2_PERMISSION_STATE_DENY
-                    })?;
-                }
-                Ok(())
-            }));
+                    Ok(())
+                }));
             let mut permission_token = 0_i64;
             let _ = core.add_PermissionRequested(&permission, &mut permission_token);
 

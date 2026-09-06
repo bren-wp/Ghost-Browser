@@ -84,7 +84,18 @@ function Update-XtbBundle {
     $updated = [regex]::Replace($text, $pattern, {
       param($match)
       $id = $match.Groups[2].Value
-      $body = Replace-ProductBrandingInBody -Body $match.Groups[3].Value -TranslationId $id -PreserveChromiumProject $PreserveChromiumProject
+      $originalBody = $match.Groups[3].Value
+      $body = Replace-ProductBrandingInBody -Body $originalBody -TranslationId $id -PreserveChromiumProject $PreserveChromiumProject
+
+      # Some upstream XTB entries deliberately wrap sentences with a space
+      # immediately before the newline. Once a branding replacement changes
+      # that entry, git diff --check treats the inherited trailing whitespace as
+      # newly introduced. Normalize whitespace only inside entries whose body
+      # actually changed; leave unrelated upstream translations byte-for-byte.
+      if ($body -ne $originalBody) {
+        $body = [regex]::Replace($body, '[ \t]+(?=\r?\n)', '')
+      }
+
       return $match.Groups[1].Value + $body + $match.Groups[4].Value
     })
 

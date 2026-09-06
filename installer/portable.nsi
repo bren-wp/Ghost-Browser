@@ -1,6 +1,7 @@
 Unicode true
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
+!pragma warning error all
 
 !ifndef GHOSIUM_VERSION
   !define GHOSIUM_VERSION "0.0.0"

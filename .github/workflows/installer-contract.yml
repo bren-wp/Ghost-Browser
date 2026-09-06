@@ -5,6 +5,8 @@ on:
     branches:
       - main
     paths:
+      - 'ghosium.ico'
+      - 'launcher/ghosium.rc'
       - 'installer/**'
       - 'scripts/**'
       - '.github/workflows/windows-build.yml'
@@ -14,6 +16,8 @@ on:
     branches:
       - main
     paths:
+      - 'ghosium.ico'
+      - 'launcher/ghosium.rc'
       - 'installer/**'
       - 'scripts/**'
       - '.github/workflows/windows-build.yml'
@@ -33,6 +37,42 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Validate installer PowerShell scripts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($path in @(
+            'scripts/build-native-launcher.ps1',
+            'scripts/smoke-test-windows-installer.ps1'
+          )) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path),
+              [ref]$tokens,
+              [ref]$errors
+            )
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              throw "PowerShell parser errors found in $path"
+            }
+          }
+
+      - name: Verify canonical Ghosium Windows icon
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s ghosium.ico
+          signature="$(od -An -tx1 -N4 ghosium.ico | tr -d ' \n')"
+          test "$signature" = '00000100'
+          grep -Fq '101 ICON "ghosium.ico"' launcher/ghosium.rc
+          grep -Fq '!define MUI_ICON "${GHOSIUM_ICON}"' installer/ghosium.nsi
+          grep -Fq 'Icon "${GHOSIUM_ICON}"' installer/portable.nsi
+          if grep -Fq 'modern-install.ico' installer/ghosium.nsi; then
+            echo 'Setup must not use the generic NSIS icon.' >&2
+            exit 1
+          fi
 
       - name: Reject standalone uninstall executables
         shell: bash
@@ -57,7 +97,7 @@ jobs:
             exit 1
           fi
 
-      - name: Verify same-setup uninstall registration
+      - name: Verify same-setup uninstall registration and delete guard
         shell: bash
         run: |
           set -euo pipefail
@@ -65,6 +105,7 @@ jobs:
 
           required=(
             '!define INSTALLED_SETUP "Installer\\Ghosium-Browser-Setup.exe"'
+            '!define INSTALL_MARKER "ghosium-install.marker"'
             '!define CLEANUP_SETUP "$TEMP\\Brendigo\\Ghosium Browser Cleanup\\Ghosium-Browser-Setup.exe"'
             '${GetOptions} $R0 "/UNINSTALL" $R1'
             '${GetOptions} $R0 "/CLEANUP" $R1'
@@ -72,6 +113,9 @@ jobs:
             'CopyFiles /SILENT "$EXEPATH" "${CLEANUP_SETUP}"'
             'Exec '\''"${CLEANUP_SETUP}" /CLEANUP'\'''
             'Exec '\''"${CLEANUP_SETUP}" /CLEANUP /S'\'''
+            'IfFileExists "$INSTDIR\\${INSTALL_MARKER}" 0 unsafe_install_location'
+            'IfFileExists "$INSTDIR\\${INSTALLED_SETUP}" 0 unsafe_install_location'
+            'StrCmp $R6 "Ghosium Browser|${GHOSIUM_VERSION}$\\r$\\n" install_location_verified unsafe_install_location'
             'RMDir /r /REBOOTOK "$INSTDIR"'
             'Delete /REBOOTOK "$EXEPATH"'
             '"UninstallString"'
@@ -87,12 +131,23 @@ jobs:
             fi
           done
 
+      - name: Verify Windows release performs real installer smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow='.github/workflows/windows-build.yml'
+          grep -Fq './scripts/build-native-launcher.ps1' "$workflow"
+          grep -Fq './scripts/smoke-test-windows-installer.ps1' "$workflow"
+          grep -Fq 'Ghosium-Browser-Setup.exe' scripts/smoke-test-windows-installer.ps1
+          grep -Fq '/UNINSTALL' scripts/smoke-test-windows-installer.ps1
+          grep -Fq 'UninstallString' scripts/smoke-test-windows-installer.ps1
+
       - name: Verify full-source uninstall contract
         shell: bash
         run: |
           set -euo pipefail
-          grep -Fq "setup.exe --uninstall" scripts/verify-engine-build-output.ps1
-          grep -Fq "standaloneExecutable = \$false" scripts/verify-engine-build-output.ps1
+          grep -Fq 'setup.exe --uninstall' scripts/verify-engine-build-output.ps1
+          grep -Fq 'standaloneExecutable = $false' scripts/verify-engine-build-output.ps1
 
           if grep -Ei 'copy-item.*uninstall\.exe|upload.*uninstall\.exe|ghosium-(browser-)?uninstall\.exe' .github/workflows/full-source-windows-build.yml; then
             echo 'Full-source workflow must not package a standalone uninstaller.' >&2

@@ -10,7 +10,7 @@ use webview2_com::{
         COREWEBVIEW2_WEB_RESOURCE_CONTEXT_PING, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SCRIPT,
         COREWEBVIEW2_WEB_RESOURCE_CONTEXT_STYLESHEET, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_WEBSOCKET,
         COREWEBVIEW2_WEB_RESOURCE_CONTEXT_XML_HTTP_REQUEST, ICoreWebView2_2, ICoreWebView2_13,
-        ICoreWebView2Profile3,
+        ICoreWebView2Profile3, ICoreWebView2Settings4,
     },
     CoTaskMemPWSTR, PermissionRequestedEventHandler, WebResourceRequestedEventHandler, take_pwstr,
 };
@@ -103,14 +103,15 @@ pub fn install(webview: &Webview, tab_id: String, app: AppHandle) -> Result<(), 
                 args.ResourceContext(&mut context)?;
                 let resource_type = adblock_resource_type(context);
 
-                let should_block = app_for_filter
-                    .try_state::<BrowserState>()
-                    .map(|state| {
-                        state
-                            .privacy
-                            .should_block(&request_url, &source_url, resource_type)
-                    })
-                    .unwrap_or(false);
+                let should_block = context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_PING
+                    || app_for_filter
+                        .try_state::<BrowserState>()
+                        .map(|state| {
+                            state
+                                .privacy
+                                .should_block(&request_url, &source_url, resource_type)
+                        })
+                        .unwrap_or(false);
 
                 if should_block {
                     let reason = CoTaskMemPWSTR::from("Blocked by Ghost Browser");
@@ -155,8 +156,16 @@ pub fn install(webview: &Webview, tab_id: String, app: AppHandle) -> Result<(), 
             if let Ok(settings) = core.Settings() {
                 let _ = settings.SetAreDevToolsEnabled(false);
                 let _ = settings.SetAreDefaultContextMenusEnabled(true);
+                let _ = settings.SetAreHostObjectsAllowed(false);
+                let _ = settings.SetIsWebMessageEnabled(false);
                 let _ = settings.SetIsStatusBarEnabled(false);
                 let _ = settings.SetIsZoomControlEnabled(true);
+                let _ = settings.SetIsBuiltInErrorPageEnabled(true);
+
+                if let Ok(settings4) = settings.cast::<ICoreWebView2Settings4>() {
+                    let _ = settings4.SetIsGeneralAutofillEnabled(false);
+                    let _ = settings4.SetIsPasswordAutosaveEnabled(false);
+                }
             }
         })
         .map_err(|error| error.to_string())

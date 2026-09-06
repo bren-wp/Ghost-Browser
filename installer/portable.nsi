@@ -31,6 +31,11 @@ VIAddVersionKey /LANG=1033 "FileVersion" "${GHOSIUM_VERSION}"
 VIAddVersionKey /LANG=1033 "ProductVersion" "${GHOSIUM_VERSION}"
 VIAddVersionKey /LANG=1033 "LegalCopyright" "Copyright (c) 2026 Brendigo"
 
+; MUI language tables must follow at least one MUI page declaration. Portable
+; remains SilentInstall=silent, so this page is never shown; it only gives MUI
+; the correct compile-time ordering and keeps makensis warning-free.
+!insertmacro MUI_PAGE_INSTFILES
+
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "Croatian"
 !insertmacro MUI_LANGUAGE "German"

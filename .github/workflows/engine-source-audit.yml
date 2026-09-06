@@ -33,6 +33,8 @@ jobs:
           foreach ($path in @(
             'scripts/bootstrap-engine-source.ps1',
             'scripts/apply-engine-branding.ps1',
+            'scripts/rebrand-engine-locales.ps1',
+            'scripts/verify-engine-locales.ps1',
             'scripts/verify-engine-fork.ps1'
           )) {
             $tokens = $null

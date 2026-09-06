@@ -50,6 +50,53 @@ foreach ($relative in $requiredFiles) {
   }
 }
 
+# Uninstall is deliberately implemented by the installed setup.exe invoked with
+# Chromium's normal --uninstall flow and registered Windows uninstall command.
+# Ghosium must not ship a second standalone uninstall executable.
+foreach ($forbiddenUninstaller in @(
+  'uninstall.exe',
+  'Ghosium-Uninstall.exe',
+  'Ghosium-Browser-Uninstall.exe'
+)) {
+  if (Test-Path (Join-Path $outPath $forbiddenUninstaller) -PathType Leaf) {
+    throw "Standalone uninstaller is forbidden; use setup.exe --uninstall instead: $forbiddenUninstaller"
+  }
+}
+
+$uninstallSourceFiles = [ordered]@{
+  setupMain = Join-Path $sourceRootResolved 'chrome/installer/setup/setup_main.cc'
+  uninstall = Join-Path $sourceRootResolved 'chrome/installer/setup/uninstall.cc'
+  installWorker = Join-Path $sourceRootResolved 'chrome/installer/setup/install_worker.cc'
+  utilConstants = Join-Path $sourceRootResolved 'chrome/installer/util/util_constants.h'
+}
+foreach ($entry in $uninstallSourceFiles.GetEnumerator()) {
+  if (!(Test-Path $entry.Value -PathType Leaf)) {
+    throw "Pinned source is missing required Windows uninstall support: $($entry.Value)"
+  }
+}
+
+$setupMainText = [IO.File]::ReadAllText($uninstallSourceFiles.setupMain)
+$uninstallText = [IO.File]::ReadAllText($uninstallSourceFiles.uninstall)
+$installWorkerText = [IO.File]::ReadAllText($uninstallSourceFiles.installWorker)
+$utilConstantsText = [IO.File]::ReadAllText($uninstallSourceFiles.utilConstants)
+
+if (!$setupMainText.Contains('HasSwitch(installer::switches::kUninstall)') -or
+    !$setupMainText.Contains('UninstallProduct(')) {
+  throw 'setup.exe no longer exposes Chromium-compatible --uninstall handling.'
+}
+if (!$uninstallText.Contains('InstallStatus UninstallProduct(')) {
+  throw 'Pinned source no longer contains the browser uninstall implementation.'
+}
+if (!$utilConstantsText.Contains('kSetupExe[] = L"setup.exe"') -or
+    !$utilConstantsText.Contains('kUninstallStringField[] = L"UninstallString"') -or
+    !$utilConstantsText.Contains('kUninstallArgumentsField[] = L"UninstallArguments"')) {
+  throw 'Windows uninstall registry/setup constants changed unexpectedly.'
+}
+if (!$installWorkerText.Contains('installer::kUninstallStringField') -or
+    !$installWorkerText.Contains('installer::kUninstallArgumentsField')) {
+  throw 'Installer no longer registers the setup-based uninstall command.'
+}
+
 $chrome = Get-Item (Join-Path $outPath 'chrome.exe')
 $chromeInfo = $chrome.VersionInfo
 if ([string]$chromeInfo.ProductName -ne 'Ghosium Browser') {
@@ -119,6 +166,11 @@ $provenance = [ordered]@{
   publisher = [string]$chromeInfo.CompanyName
   chromeProductName = [string]$chromeInfo.ProductName
   installerProductName = [string]$installerInfo.ProductName
+  uninstall = [ordered]@{
+    supported = $true
+    mechanism = 'setup.exe --uninstall via Windows registered uninstall command'
+    standaloneExecutable = $false
+  }
   repositoryCommit = if ($env:GITHUB_SHA) { $env:GITHUB_SHA } else { $null }
   verifiedUtc = [DateTime]::UtcNow.ToString('o')
   sha256 = $hashes
@@ -127,4 +179,5 @@ $provenance | ConvertTo-Json -Depth 5 | Set-Content $ProvenancePath -Encoding ut
 
 Write-Host "Ghosium full-source Windows binary verification: OK"
 Write-Host "Engine version: $($chromeInfo.ProductVersion)"
+Write-Host 'Uninstall: supported through registered setup.exe --uninstall flow; no standalone uninstall.exe'
 Write-Host "Provenance: $ProvenancePath"

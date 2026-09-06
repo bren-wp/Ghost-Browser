@@ -72,54 +72,81 @@ app.innerHTML = `
   <main class="browser-shell">
     <header class="browser-chrome" id="browser-chrome">
       <div class="tabstrip drag-region" id="drag-region">
-        <div class="brand" aria-label="Ghosium Browser"><span class="ghosium-mark">G</span></div>
-        <div class="tabs" id="tabs"></div>
+        <div class="brand no-drag" aria-label="Ghosium Browser" title="Ghosium Browser">
+          <span class="ghosium-mark text-aurora" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M6.5 19V10.6a5.5 5.5 0 0 1 11 0V19l-2.2-1.7L13.7 19 12 17.4 10.3 19l-1.6-1.7L6.5 19Z"/><path d="M9.4 11.2h.01M14.6 11.2h.01"/></svg>
+          </span>
+        </div>
+        <div class="tabs no-drag" id="tabs"></div>
         <button class="chrome-button new-tab-button no-drag" id="new-tab" title="Novi tab" aria-label="Novi tab">+</button>
         <div class="window-controls no-drag">
-          <button id="minimize" class="window-button" aria-label="Minimiziraj">—</button>
-          <button id="maximize" class="window-button" aria-label="Maksimiziraj">□</button>
-          <button id="close-window" class="window-button close" aria-label="Zatvori">×</button>
+          <button id="minimize" class="window-button" aria-label="Minimiziraj"><svg class="ui-icon" viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>
+          <button id="maximize" class="window-button" aria-label="Maksimiziraj"><svg class="ui-icon" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1"/></svg></button>
+          <button id="close-window" class="window-button close" aria-label="Zatvori"><svg class="ui-icon" viewBox="0 0 24 24"><path d="m8 8 8 8m0-8-8 8"/></svg></button>
         </div>
       </div>
+
       <div class="toolbar no-drag">
         <div class="nav-cluster">
-          <button id="back" class="icon-button" title="Natrag" aria-label="Natrag">‹</button>
-          <button id="forward" class="icon-button" title="Naprijed" aria-label="Naprijed">›</button>
-          <button id="reload" class="icon-button" title="Osvježi" aria-label="Osvježi">↻</button>
+          <button id="back" class="icon-button" title="Natrag" aria-label="Natrag"><svg class="ui-icon" viewBox="0 0 24 24"><path d="m14.5 6-6 6 6 6"/></svg></button>
+          <button id="forward" class="icon-button" title="Naprijed" aria-label="Naprijed"><svg class="ui-icon" viewBox="0 0 24 24"><path d="m9.5 6 6 6-6 6"/></svg></button>
+          <button id="reload" class="icon-button" title="Osvježi" aria-label="Osvježi"><svg class="ui-icon" viewBox="0 0 24 24"><path d="M18 8a7 7 0 1 0 1 7"/><path d="M18 4v4h-4"/></svg></button>
         </div>
+
         <form id="omnibox-form" class="omnibox" autocomplete="off">
-          <span id="connection-icon" class="connection-icon" aria-hidden="true">◈</span>
+          <span id="connection-icon" class="connection-icon" aria-hidden="true">●</span>
           <input id="omnibox" type="text" spellcheck="false" autocapitalize="off" autocomplete="off"
                  maxlength="8192" aria-label="Adresa i pretraživanje" aria-autocomplete="list"
                  aria-controls="omnibox-suggestions" aria-expanded="false"
-                 placeholder="Pretraži web ili upiši web-adresu" />
+                 placeholder="Pretraži web ili upiši adresu" />
           <button type="button" id="shield" class="shield" title="Ghosium zaštita" aria-label="Ghosium zaštita">
-            <span class="shield-icon">◆</span><span id="blocked-count">0</span>
+            <svg class="ui-icon shield-svg" viewBox="0 0 24 24"><path d="M12 3 19 6v5c0 4.8-2.9 8.2-7 10-4.1-1.8-7-5.2-7-10V6l7-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+            <span id="blocked-count">0</span>
           </button>
           <div id="omnibox-suggestions" class="omnibox-suggestions" role="listbox" aria-label="Prijedlozi pretraživanja"></div>
         </form>
-        <button id="privacy" class="icon-button toolbar-action" title="Privatnost" aria-label="Privatnost">◌</button>
-        <button id="menu" class="icon-button toolbar-action" title="Izbornik" aria-label="Izbornik" aria-expanded="false">⋯</button>
+
+        <button id="privacy" class="icon-button toolbar-action" title="Privatnost" aria-label="Privatnost"><svg class="ui-icon" viewBox="0 0 24 24"><path d="M12 3 19 6v5c0 4.8-2.9 8.2-7 10-4.1-1.8-7-5.2-7-10V6l7-3Z"/></svg></button>
+        <button id="menu" class="icon-button toolbar-action" title="Izbornik" aria-label="Izbornik" aria-expanded="false"><svg class="ui-icon" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="18" cy="12" r="1"/></svg></button>
       </div>
     </header>
 
     <section class="newtab" id="newtab">
+      <div class="aur aur-one" aria-hidden="true"></div>
+      <div class="aur aur-two" aria-hidden="true"></div>
       <div class="newtab-inner">
-        <div class="hero-mark">G</div>
-        <h1>Ghosium Browser</h1>
-        <p>Brzo. Privatno. Pod vašom kontrolom.</p>
+        <div class="hero-mark text-aurora" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M6.5 19V10.6a5.5 5.5 0 0 1 11 0V19l-2.2-1.7L13.7 19 12 17.4 10.3 19l-1.6-1.7L6.5 19Z"/><path d="M9.4 11.2h.01M14.6 11.2h.01"/></svg>
+        </div>
+        <p class="newtab-eyebrow">GHOSIUM BROWSER</p>
+        <h1>Web bez suvišnog traga.</h1>
+        <p class="newtab-subtitle">Privatno pregledavanje, lokalni podaci i zaštita od poznatih trackera — bez Ghosium analitike i profiliranja.</p>
+
         <form id="newtab-search" class="newtab-search suggestion-host" autocomplete="off">
-          <span aria-hidden="true">⌕</span>
+          <svg class="ui-icon search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
           <input id="newtab-input" type="text" maxlength="8192"
                  placeholder="Pretraži web ili upiši adresu" spellcheck="false" autocomplete="off"
                  aria-label="Pretraživanje ili web-adresa" aria-autocomplete="list"
                  aria-controls="newtab-suggestions" aria-expanded="false" />
           <div id="newtab-suggestions" class="omnibox-suggestions newtab-suggestions" role="listbox" aria-label="Prijedlozi pretraživanja"></div>
         </form>
-        <div class="privacy-cards">
-          <article><strong>Zaštita od praćenja</strong><span>Poznati trackeri i oglasne mreže blokiraju se prije prikaza.</span></article>
-          <article><strong>Čiste adrese</strong><span>Parametri za praćenje uklanjaju se prije navigacije.</span></article>
-          <article><strong>Memory Saver</strong><span>Neaktivni tabovi oslobađaju memoriju i obnavljaju se kada ih otvorite.</span></article>
+
+        <div class="privacy-cards" aria-label="Aktivna zaštita">
+          <article>
+            <span class="card-kicker">● Aktivno</span>
+            <strong>Tracker zaštita</strong>
+            <span>Poznati trackeri i oglasni zahtjevi blokiraju se prije prikaza.</span>
+          </article>
+          <article>
+            <span class="card-kicker">● Lokalno</span>
+            <strong>Vaši podaci</strong>
+            <span>Favoriti, povijest i postavke ostaju u lokalnom Ghosium profilu.</span>
+          </article>
+          <article>
+            <span class="card-kicker">● Pametno</span>
+            <strong>Memory Saver</strong>
+            <span>Neaktivni tabovi oslobađaju resurse i vraćaju se kada ih otvorite.</span>
+          </article>
         </div>
       </div>
     </section>
@@ -127,19 +154,20 @@ app.innerHTML = `
     <aside class="panel" id="privacy-panel" aria-hidden="true">
       <div class="panel-header">
         <div><small>GHOSIUM ZAŠTITA</small><h2>Privatnost</h2></div>
-        <button id="close-panel" class="icon-button" aria-label="Zatvori">×</button>
+        <button id="close-panel" class="icon-button" aria-label="Zatvori"><svg class="ui-icon" viewBox="0 0 24 24"><path d="m8 8 8 8m0-8-8 8"/></svg></button>
       </div>
       <div class="panel-status">
         <span class="status-dot"></span>
-        <div><strong>Zaštita je uključena</strong><p>Ghosium Browser nema vlastitu analitiku, oglase ni korisničke profile.</p></div>
+        <div><strong>Zaštita je aktivna</strong><p>Ghosium Browser nema vlastitu analitiku, oglasne identifikatore ni korisničko profiliranje.</p></div>
       </div>
       <div class="setting"><div><strong>Reklame i trackeri</strong><span>Blokiranje poznatih mreža za oglašavanje i praćenje</span></div><span class="status-badge">Uključeno</span></div>
-      <div class="setting"><div><strong>Dozvole web-stranice</strong><span>Kamera, mikrofon i lokacija traže dopuštenje nakon vaše radnje; Ghosium odluku ne sprema trajno</span></div><span class="status-badge">Na zahtjev</span></div>
+      <div class="setting"><div><strong>Dozvole web-stranice</strong><span>Kamera, mikrofon i lokacija traže dopuštenje nakon vaše radnje</span></div><span class="status-badge">Na zahtjev</span></div>
       <div class="setting"><div><strong>Privacy signali</strong><span>Do Not Track i Global Privacy Control</span></div><span class="status-badge">Uključeno</span></div>
       <div class="panel-actions"><button id="clear-data" class="primary-button">Obriši podatke pregledavanja</button></div>
     </aside>
 
     <aside class="app-menu" id="app-menu" aria-hidden="true">
+      <div class="menu-head"><span class="menu-eyebrow">GHOSIUM</span><strong class="menu-title">Preglednik</strong></div>
       <button class="menu-item" id="menu-new-tab"><span>Novi tab</span><kbd>Ctrl+T</kbd></button>
       <button class="menu-item" id="menu-reopen-tab"><span>Ponovno otvori zatvoreni tab</span><kbd>Ctrl+Shift+T</kbd></button>
       <div class="menu-separator"></div>
@@ -147,7 +175,7 @@ app.innerHTML = `
       <div class="menu-status" id="memory-status">Memory Saver</div>
       <button class="menu-item" id="menu-clear-data"><span>Obriši podatke pregledavanja</span></button>
       <div class="menu-separator"></div>
-      <div class="menu-footer"><strong>Ghosium Browser</strong><span>Privatno pregledavanje za Windows</span></div>
+      <div class="menu-footer"><strong>Ghosium Browser</strong><span>Brendigo · privatno pregledavanje za Windows</span></div>
     </aside>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>

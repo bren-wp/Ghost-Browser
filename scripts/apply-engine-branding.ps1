@@ -37,6 +37,28 @@ function Set-GritMessage {
   Write-Host "Updated $MessageId ($($matches.Count) occurrence(s))"
 }
 
+function Replace-GritProductBranding {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path
+  )
+
+  $text = [IO.File]::ReadAllText($Path)
+  $pattern = '(?s)(<message\b[^>]*>)(.*?)(</message>)'
+  $updated = [regex]::Replace($text, $pattern, {
+    param($match)
+    $body = $match.Groups[2].Value
+    $body = $body.Replace('Chrome Web Store', 'Ghosium Store')
+    $body = $body.Replace('Google Chrome for Testing', 'Ghosium Browser')
+    $body = $body.Replace('Chrome for Testing', 'Ghosium Browser')
+    $body = $body.Replace('Google Chrome', 'Ghosium Browser')
+    $body = [regex]::Replace($body, '\bChromium\b', 'Ghosium Browser')
+    $body = [regex]::Replace($body, '\bChrome\b', 'Ghosium Browser')
+    $body = $body.Replace('Ghosium Browser browser', 'Ghosium Browser')
+    return $match.Groups[1].Value + $body + $match.Groups[3].Value
+  })
+  [IO.File]::WriteAllText($Path, $updated, [Text.UTF8Encoding]::new($false))
+}
+
 function Replace-RequiredLiteral {
   param(
     [Parameter(Mandatory = $true)][string]$Path,
@@ -52,15 +74,37 @@ function Replace-RequiredLiteral {
   [IO.File]::WriteAllText($Path, $updated, [Text.UTF8Encoding]::new($false))
 }
 
+function Set-BrandingValue {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$Key,
+    [Parameter(Mandatory = $true)][string]$Value
+  )
+
+  $text = [IO.File]::ReadAllText($Path)
+  $pattern = '(?m)^' + [regex]::Escape($Key) + '=.*$'
+  if (![regex]::IsMatch($text, $pattern)) {
+    throw "Expected branding key was not found: $Key"
+  }
+  $updated = [regex]::Replace($text, $pattern, $Key + '=' + $Value)
+  [IO.File]::WriteAllText($Path, $updated, [Text.UTF8Encoding]::new($false))
+}
+
 $chromiumStrings = Join-Path $sourceRootResolved 'chrome/app/chromium_strings.grd'
 $settingsStrings = Join-Path $sourceRootResolved 'chrome/app/settings_chromium_strings.grdp'
 $urlConstants = Join-Path $sourceRootResolved 'chrome/common/url_constants.h'
+$brandingFile = Join-Path $sourceRootResolved 'chrome/app/theme/chromium/BRANDING'
 
-foreach ($required in @($chromiumStrings, $settingsStrings, $urlConstants)) {
+foreach ($required in @($chromiumStrings, $settingsStrings, $urlConstants, $brandingFile)) {
   if (!(Test-Path $required -PathType Leaf)) {
     throw "Pinned source layout changed; expected file missing: $required"
   }
 }
+
+# Replace product names only inside GRIT message bodies. Descriptions/comments and
+# third-party attribution remain untouched.
+Replace-GritProductBranding -Path $chromiumStrings
+Replace-GritProductBranding -Path $settingsStrings
 
 Set-GritMessage -Path $chromiumStrings -MessageId 'IDS_PRODUCT_NAME' -Value $config.product.name
 Set-GritMessage -Path $chromiumStrings -MessageId 'IDS_SHORT_PRODUCT_NAME' -Value $config.product.shortName
@@ -71,9 +115,48 @@ Set-GritMessage -Path $settingsStrings -MessageId 'IDS_RELAUNCH_CONFIRMATION_DIA
 Set-GritMessage -Path $settingsStrings -MessageId 'IDS_SETTINGS_ABOUT_PROGRAM' -Value 'About Ghosium Browser'
 Set-GritMessage -Path $settingsStrings -MessageId 'IDS_SETTINGS_GET_HELP_USING_CHROME' -Value 'Ghosium Support'
 
+# Windows file metadata and product identity are sourced from Chromium BRANDING.
+Set-BrandingValue -Path $brandingFile -Key 'COMPANY_FULLNAME' -Value 'Brendigo'
+Set-BrandingValue -Path $brandingFile -Key 'COMPANY_SHORTNAME' -Value 'Brendigo'
+Set-BrandingValue -Path $brandingFile -Key 'PRODUCT_FULLNAME' -Value 'Ghosium Browser'
+Set-BrandingValue -Path $brandingFile -Key 'PRODUCT_SHORTNAME' -Value 'Ghosium'
+Set-BrandingValue -Path $brandingFile -Key 'PRODUCT_INSTALLER_FULLNAME' -Value 'Ghosium Browser Installer'
+Set-BrandingValue -Path $brandingFile -Key 'PRODUCT_INSTALLER_SHORTNAME' -Value 'Ghosium Installer'
+Set-BrandingValue -Path $brandingFile -Key 'COPYRIGHT' -Value 'Copyright @LASTCHANGE_YEAR@ Brendigo. Chromium and third-party components retain their respective copyrights.'
+Set-BrandingValue -Path $brandingFile -Key 'MAC_BUNDLE_ID' -Value 'com.brendigo.ghosium'
+Set-BrandingValue -Path $brandingFile -Key 'MAC_CREATOR_CODE' -Value 'Gh24'
+
+# Product-generated Help entry points must stay on Ghosium-controlled domains.
 Replace-RequiredLiteral -Path $urlConstants -OldValue '"https://support.google.com/chrome?p=help&ctx=keyboard"' -NewValue '"https://ghosium.com/support"'
 Replace-RequiredLiteral -Path $urlConstants -OldValue '"https://support.google.com/chrome?p=help&ctx=menu"' -NewValue '"https://ghosium.com/support"'
 Replace-RequiredLiteral -Path $urlConstants -OldValue '"https://support.google.com/chrome?p=help&ctx=settings"' -NewValue '"https://ghosium.com/support"'
+
+# Replace every product icon path used by current-channel-logo, Windows resources,
+# tiles, app shortcuts and product vector icons.
+$brandSvg = Join-Path $repoRoot 'engine/branding/ghosium-mark.svg'
+$vectorIcon = Join-Path $repoRoot 'engine/branding/vector/product.icon'
+$vectorRefreshIcon = Join-Path $repoRoot 'engine/branding/vector/product_refresh.icon'
+foreach ($asset in @($brandSvg, $vectorIcon, $vectorRefreshIcon)) {
+  if (!(Test-Path $asset -PathType Leaf)) {
+    throw "Required Ghosium brand asset is missing: $asset"
+  }
+}
+
+Copy-Item $brandSvg (Join-Path $sourceRootResolved 'chrome/app/theme/chromium/product_logo.svg') -Force
+Copy-Item $vectorIcon (Join-Path $sourceRootResolved 'components/vector_icons/chromium/product.icon') -Force
+Copy-Item $vectorRefreshIcon (Join-Path $sourceRootResolved 'components/vector_icons/chromium/product_refresh.icon') -Force
+
+$python = Get-Command python -ErrorAction SilentlyContinue
+if (!$python) {
+  $python = Get-Command python3 -ErrorAction SilentlyContinue
+}
+if (!$python) {
+  throw 'Python 3 is required to generate deterministic Ghosium PNG/ICO engine assets.'
+}
+& $python.Source (Join-Path $repoRoot 'scripts/generate-engine-brand-assets.py') $sourceRootResolved
+if ($LASTEXITCODE -ne 0) {
+  throw "Ghosium engine asset generation failed with exit code $LASTEXITCODE"
+}
 
 $thirdPartyChanges = & git -C $sourceRootResolved status --porcelain=v1 -- third_party
 if ($LASTEXITCODE -ne 0) {
@@ -88,4 +171,4 @@ if ($LASTEXITCODE -ne 0) {
   throw 'Ghosium full-source verification failed after branding.'
 }
 
-Write-Host 'Initial source-level Ghosium branding applied successfully.'
+Write-Host 'Source-level Ghosium branding and product icon replacement applied successfully.'

@@ -3,8 +3,8 @@ use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 
 const MAX_SECRET_BYTES: usize = 2_048;
-const VAULT_PREFIX: &str = "GhostBrowser/Vault/";
-const MAIL_PREFIX: &str = "GhostBrowser/Mail/";
+const VAULT_PREFIX: &str = "GhosiumBrowser/Vault/";
+const MAIL_PREFIX: &str = "GhosiumBrowser/Mail/";
 
 #[cfg(windows)]
 fn to_wide(value: &str) -> Vec<u16> {

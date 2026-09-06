@@ -55,10 +55,10 @@ fn validate_account_transport(
         return Err("Port nije valjan".into());
     }
     if imap_port != 993 {
-        return Err("Ghost Mail podržava samo IMAP preko izravnog TLS-a na portu 993".into());
+        return Err("Ghosium Mail podržava samo IMAP preko izravnog TLS-a na portu 993".into());
     }
     if smtp_port != 465 && smtp_port != 587 {
-        return Err("Ghost Mail podržava SMTP TLS na portu 465 ili obavezni STARTTLS na portu 587".into());
+        return Err("Ghosium Mail podržava SMTP TLS na portu 465 ili obavezni STARTTLS na portu 587".into());
     }
     Ok((imap_host, smtp_host))
 }

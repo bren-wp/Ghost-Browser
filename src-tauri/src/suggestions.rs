@@ -116,10 +116,10 @@ mod tests {
 
     #[test]
     fn prefix_matches_rank_before_contains_matches() {
-        let bookmarks = vec![bookmark("Ghost Browser", "https://ghost.example/", 1)];
-        let history = vec![history("News about Ghost", "https://news.example/ghost", 2)];
-        let items = build_suggestions(&bookmarks, &history, "ghost");
-        assert_eq!(items.first().map(|item| item.url.as_str()), Some("https://ghost.example/"));
+        let bookmarks = vec![bookmark("Ghosium Browser", "https://ghosium.example/", 1)];
+        let history = vec![history("News about Ghosium", "https://news.example/ghosium", 2)];
+        let items = build_suggestions(&bookmarks, &history, "ghosium");
+        assert_eq!(items.first().map(|item| item.url.as_str()), Some("https://ghosium.example/"));
     }
 
     #[test]

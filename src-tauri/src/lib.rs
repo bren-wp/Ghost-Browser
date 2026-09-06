@@ -57,5 +57,5 @@ pub fn run() {
             mail::mail_send
         ])
         .run(tauri::generate_context!())
-        .expect("Ghost Browser runtime failure");
+        .expect("Ghosium Browser runtime failure");
 }

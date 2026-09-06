@@ -51,7 +51,7 @@ fn parse_explicit_http(input: &str) -> Result<Option<String>, String> {
 
     let url = Url::parse(input).map_err(|_| "Neispravna web-adresa".to_string())?;
     if !safe_http_url(&url) {
-        return Err("Ghost Browser dopušta samo valjane HTTP i HTTPS adrese".into());
+        return Err("Ghosium Browser dopušta samo valjane HTTP i HTTPS adrese".into());
     }
     Ok(Some(url.to_string()))
 }
@@ -90,7 +90,7 @@ fn build_direct_url(input: &str) -> Result<Option<String>, String> {
         .map_err(|_| "Neispravna web-adresa".to_string())?;
 
     if !safe_http_url(&url) {
-        return Err("Ghost Browser dopušta samo valjane HTTP i HTTPS adrese".into());
+        return Err("Ghosium Browser dopušta samo valjane HTTP i HTTPS adrese".into());
     }
     Ok(Some(url.to_string()))
 }
@@ -132,11 +132,11 @@ mod tests {
 
     #[test]
     fn plain_text_becomes_encoded_search_without_tracking_identifiers() {
-        let url = resolve_omnibox("ghost browser privatnost")
+        let url = resolve_omnibox("ghosium browser privatnost")
             .expect("search URL should be generated");
         assert_eq!(
             url,
-            "https://search.brave.com/search?q=ghost+browser+privatnost"
+            "https://search.brave.com/search?q=ghosium+browser+privatnost"
         );
     }
 

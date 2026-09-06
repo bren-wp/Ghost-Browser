@@ -182,7 +182,7 @@ fn validate_url(input: &str) -> Result<Url, String> {
 
     let mut url = Url::parse(input).map_err(|_| "Neispravna web-adresa".to_string())?;
     if !is_allowed_http_url(&url) {
-        return Err("Ghost Browser dopušta samo valjane HTTP i HTTPS adrese".into());
+        return Err("Ghosium Browser dopušta samo valjane HTTP i HTTPS adrese".into());
     }
 
     const TRACKING: &[&str] = &[
@@ -256,7 +256,7 @@ fn select_discard_candidate(
 }
 
 fn emit_tab_event(app: &AppHandle, event: TabEvent) {
-    let _ = app.emit_to("main", "ghost://tab-event", event);
+    let _ = app.emit_to("main", "ghosium://tab-event", event);
 }
 
 fn discard_tab_webview(
@@ -367,7 +367,7 @@ fn create_webview(
             if is_allowed_http_url(&url) {
                 let _ = app_for_new_window.emit_to(
                     "main",
-                    "ghost://open-current-tab",
+                    "ghosium://open-current-tab",
                     serde_json::json!({
                         "tabId": tab_for_new_window,
                         "url": url.to_string()
@@ -399,7 +399,7 @@ fn create_webview(
             if should_emit {
                 let _ = webview.emit_to(
                     "main",
-                    "ghost://tab-event",
+                    "ghosium://tab-event",
                     TabEvent {
                         id: tab_for_load.clone(),
                         title: None,
@@ -429,7 +429,7 @@ fn create_webview(
             if should_emit {
                 let _ = webview.emit_to(
                     "main",
-                    "ghost://tab-event",
+                    "ghosium://tab-event",
                     TabEvent {
                         id: tab_for_title.clone(),
                         title: Some(title),
@@ -447,7 +447,7 @@ fn create_webview(
                 if allowed {
                     let _ = webview.emit_to(
                         "main",
-                        "ghost://download",
+                        "ghosium://download",
                         serde_json::json!({
                             "tabId": tab_for_download,
                             "url": url.to_string()
@@ -596,7 +596,7 @@ pub async fn set_active_tab(
 
     let _ = app.emit_to(
         "main",
-        "ghost://active-tab",
+        "ghosium://active-tab",
         serde_json::json!({ "id": tab_id }),
     );
     Ok(())

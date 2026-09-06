@@ -1,17 +1,17 @@
 [package]
-name = "ghost-browser"
+name = "ghosium-browser"
 version = "0.5.1"
-description = "Ghost Browser - privacy-first Windows browser"
+description = "Ghosium Browser - privacy-first Windows browser"
 authors = ["Brendigo"]
 edition = "2024"
 rust-version = "1.85"
 
 [lib]
-name = "ghost_browser_lib"
+name = "ghosium_browser_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "ghost-browser"
+name = "ghosium-browser"
 path = "src/main.rs"
 
 [build-dependencies]

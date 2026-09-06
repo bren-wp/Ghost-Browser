@@ -117,7 +117,7 @@ pub fn install(webview: &Webview, tab_id: String, app: AppHandle) -> Result<(), 
                         .unwrap_or(false);
 
                 if should_block {
-                    let reason = CoTaskMemPWSTR::from("Blocked by Ghost Browser");
+                    let reason = CoTaskMemPWSTR::from("Blocked by Ghosium Browser");
                     let headers = CoTaskMemPWSTR::from(
                         "Cache-Control: no-store\r\nContent-Type: text/plain; charset=utf-8",
                     );
@@ -133,7 +133,7 @@ pub fn install(webview: &Webview, tab_id: String, app: AppHandle) -> Result<(), 
                         if let Some(blocked) = state.increment_blocked(&tab_for_filter) {
                             let _ = app_for_filter.emit_to(
                                 "main",
-                                "ghost://tab-event",
+                                "ghosium://tab-event",
                                 serde_json::json!({
                                     "id": tab_for_filter,
                                     "blocked": blocked

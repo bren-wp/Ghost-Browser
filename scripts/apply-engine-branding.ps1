@@ -68,6 +68,9 @@ function Replace-RequiredLiteral {
 
   $text = [IO.File]::ReadAllText($Path)
   if (!$text.Contains($OldValue)) {
+    if ($text.Contains($NewValue)) {
+      return
+    }
     throw "Expected source literal was not found in ${Path}: $OldValue"
   }
   $updated = $text.Replace($OldValue, $NewValue)
@@ -96,6 +99,7 @@ $componentStrings = Join-Path $sourceRootResolved 'components/components_chromiu
 $extensionStrings = Join-Path $sourceRootResolved 'extensions/strings/extensions_chromium_strings.grdp'
 $urlConstants = Join-Path $sourceRootResolved 'chrome/common/url_constants.h'
 $brandingFile = Join-Path $sourceRootResolved 'chrome/app/theme/chromium/BRANDING'
+$managedProfileNotice = Join-Path $sourceRootResolved 'chrome/browser/resources/signin/managed_user_profile_notice/managed_user_profile_notice_value_prop.html.ts'
 
 foreach ($required in @(
   $chromiumStrings,
@@ -103,7 +107,8 @@ foreach ($required in @(
   $componentStrings,
   $extensionStrings,
   $urlConstants,
-  $brandingFile
+  $brandingFile,
+  $managedProfileNotice
 )) {
   if (!(Test-Path $required -PathType Leaf)) {
     throw "Pinned source layout changed; expected file missing: $required"
@@ -120,12 +125,18 @@ Set-GritMessage -Path $chromiumStrings -MessageId 'IDS_PRODUCT_NAME' -Value $con
 Set-GritMessage -Path $chromiumStrings -MessageId 'IDS_SHORT_PRODUCT_NAME' -Value $config.product.shortName
 Set-GritMessage -Path $chromiumStrings -MessageId 'IDS_PRODUCT_DESCRIPTION' -Value $config.product.description
 Set-GritMessage -Path $chromiumStrings -MessageId 'IDS_WELCOME_TO_CHROME' -Value 'Welcome to Ghosium Browser; new browser window opened'
+Set-GritMessage -Path $chromiumStrings -MessageId 'IDS_SIDE_PANEL_CUSTOMIZE_CHROME_TITLE' -Value 'Customize Ghosium'
 
 Set-GritMessage -Path $settingsStrings -MessageId 'IDS_RELAUNCH_CONFIRMATION_DIALOG_TITLE' -Value 'Relaunch Ghosium Browser?'
 Set-GritMessage -Path $settingsStrings -MessageId 'IDS_SETTINGS_ABOUT_PROGRAM' -Value 'About Ghosium Browser'
 Set-GritMessage -Path $settingsStrings -MessageId 'IDS_SETTINGS_GET_HELP_USING_CHROME' -Value 'Ghosium Support'
 
 Set-GritMessage -Path $componentStrings -MessageId 'IDS_SHORT_PRODUCT_LOGO_ALT_TEXT' -Value 'Ghosium logo'
+
+# A small number of WebUI templates contain literal accessibility branding
+# instead of GRIT strings. Keep these targeted so copyright/source comments are
+# never globally rewritten.
+Replace-RequiredLiteral -Path $managedProfileNotice -OldValue 'alt="Chrome logo"' -NewValue 'alt="Ghosium logo"'
 
 # These two messages are legal attribution, not Ghosium product branding. Keep
 # Chromium named here as the upstream open-source project while making it clear

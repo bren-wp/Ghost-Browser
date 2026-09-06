@@ -19,6 +19,7 @@ Unicode true
 !define PRODUCT_PUBLISHER "Brendigo"
 !define PRODUCT_EXE "Ghosium-Browser.exe"
 !define INSTALLED_SETUP "Installer\Ghosium-Browser-Setup.exe"
+!define INSTALL_MARKER "ghosium-install.marker"
 !define CLEANUP_DIR "$TEMP\Brendigo\Ghosium Browser Cleanup"
 !define CLEANUP_SETUP "$TEMP\Brendigo\Ghosium Browser Cleanup\Ghosium-Browser-Setup.exe"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\GhosiumBrowser"
@@ -159,15 +160,39 @@ Function RemoveGhosium
   StrCmp $R2 "" 0 remove_location_ready
     StrCpy $R2 "$LOCALAPPDATA\Programs\Ghosium Browser"
 remove_location_ready:
+  GetFullPathName $R2 $R2
   StrCpy $INSTDIR $R2
 
+  ; Never recursively delete a directory based only on a mutable registry path.
+  ; The directory must carry both the versioned Ghosium install marker and the
+  ; same Setup executable that Windows Registered Apps invokes.
+  IfFileExists "$INSTDIR\${INSTALL_MARKER}" 0 unsafe_install_location
+  IfFileExists "$INSTDIR\${INSTALLED_SETUP}" 0 unsafe_install_location
+  ClearErrors
+  FileOpen $R5 "$INSTDIR\${INSTALL_MARKER}" r
+  IfErrors unsafe_install_location
+  FileRead $R5 $R6
+  FileClose $R5
+  StrCmp $R6 "Ghosium Browser|${GHOSIUM_VERSION}$\r$\n" install_location_verified unsafe_install_location
+
+unsafe_install_location:
+  DetailPrint "Refusing to remove an unverified Ghosium installation path: $INSTDIR"
+  IfSilent +2
+    MessageBox MB_ICONSTOP "Ghosium Browser could not verify the installation directory, so no files were removed."
+  SetErrorLevel 3
+  Quit
+
+install_location_verified:
   IfSilent remove_now
   MessageBox MB_ICONQUESTION|MB_YESNO "Remove Ghosium Browser from this Windows account?" IDYES remove_now
   SetErrorLevel 2
   Quit
 
 remove_now:
-  ; Stop the launcher and all engine processes before deleting owned files.
+  ; Give the installed Setup process time to exit after it launched this same
+  ; Setup from the temp directory, avoiding a locked-image cleanup race.
+  Sleep 1200
+
   nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /IM "Ghosium-Browser.exe" /T /F'
   nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /IM "Ghosium-Engine.exe" /T /F'
 
@@ -239,6 +264,12 @@ Section "Ghosium Browser" SecMain
   StrCmp "$EXEPATH" "$INSTDIR\${INSTALLED_SETUP}" setup_ready
   CopyFiles /SILENT "$EXEPATH" "$INSTDIR\${INSTALLED_SETUP}"
 setup_ready:
+
+  ; This marker lets the temp cleanup instance prove it is deleting a Ghosium
+  ; installation built by the same Setup version rather than an arbitrary path.
+  FileOpen $0 "$INSTDIR\${INSTALL_MARKER}" w
+  FileWrite $0 "Ghosium Browser|${GHOSIUM_VERSION}$\r$\n"
+  FileClose $0
 
   CreateDirectory "$SMPROGRAMS\Ghosium Browser"
   CreateShortcut "$SMPROGRAMS\Ghosium Browser\Ghosium Browser.lnk" "$INSTDIR\${PRODUCT_EXE}"

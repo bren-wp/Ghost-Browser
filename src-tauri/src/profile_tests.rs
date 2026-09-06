@@ -1,45 +1,15 @@
 #![cfg(test)]
 
 use crate::profile::ProfileStore;
-use std::{env, ffi::OsString, fs, path::PathBuf, sync::Mutex};
+use std::{env, fs};
 use uuid::Uuid;
-
-static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-struct LocalAppDataGuard {
-    previous: Option<OsString>,
-}
-
-impl LocalAppDataGuard {
-    fn install(path: &PathBuf) -> Self {
-        let previous = env::var_os("LOCALAPPDATA");
-        // SAFETY: this test holds ENV_LOCK for its full lifetime, and no other Ghost test
-        // mutates LOCALAPPDATA. The value is restored in Drop before the lock is released.
-        unsafe { env::set_var("LOCALAPPDATA", path) };
-        Self { previous }
-    }
-}
-
-impl Drop for LocalAppDataGuard {
-    fn drop(&mut self) {
-        // SAFETY: ENV_LOCK is still held by the test while this guard is dropped.
-        unsafe {
-            if let Some(previous) = self.previous.as_ref() {
-                env::set_var("LOCALAPPDATA", previous);
-            } else {
-                env::remove_var("LOCALAPPDATA");
-            }
-        }
-    }
-}
 
 #[test]
 fn local_profile_round_trip_persists_library_metadata() {
-    let _env_lock = ENV_LOCK.lock().expect("environment test lock poisoned");
     let nonce = Uuid::new_v4().to_string();
     let sandbox = env::temp_dir().join(format!("ghost-browser-profile-test-{nonce}"));
     fs::create_dir_all(&sandbox).expect("temporary profile root must be created");
-    let _local_app_data = LocalAppDataGuard::install(&sandbox);
+    let profile_path = sandbox.join("profile.json");
 
     let bookmark_url = format!("https://example.com/bookmark/{nonce}");
     let history_url = format!("https://example.com/history/{nonce}");
@@ -48,7 +18,7 @@ fn local_profile_round_trip_persists_library_metadata() {
     let vault_user = format!("ghost-user-{nonce}");
     let mail = format!("ghost-{nonce}@example.com");
 
-    let store = ProfileStore::new();
+    let store = ProfileStore::new_for_test(profile_path.clone());
     let bookmark = store
         .add_bookmark("Ghost CI favorite", &bookmark_url)
         .expect("bookmark must persist");
@@ -74,7 +44,7 @@ fn local_profile_round_trip_persists_library_metadata() {
 
     drop(store);
 
-    let restored = ProfileStore::new();
+    let restored = ProfileStore::new_for_test(profile_path);
     assert!(restored.list_bookmarks().iter().any(|item| item.id == bookmark.id));
     assert!(restored.list_history(10_000).iter().any(|item| item.url == history_url));
     assert!(restored.list_downloads(2_000).iter().any(|item| item.url == download_url));

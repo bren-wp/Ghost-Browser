@@ -4,6 +4,8 @@ mod privacy;
 mod profile;
 mod search;
 mod vault;
+#[cfg(all(test, windows))]
+mod vault_tests;
 #[cfg(windows)]
 mod webview2_guard;
 

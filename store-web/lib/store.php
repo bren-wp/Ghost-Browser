@@ -3,10 +3,16 @@ declare(strict_types=1);
 
 const GHOSIUM_STORE_SCHEMA_VERSION = 1;
 const GHOSIUM_STORE_MAX_DATA_BYTES = 1048576;
+const GHOSIUM_STORE_MAX_PACKAGE_BYTES = 134217728;
+
+function store_root_path(): string
+{
+    return dirname(__DIR__);
+}
 
 function store_data_path(string $name): string
 {
-    return dirname(__DIR__) . '/storage/data/' . $name;
+    return store_root_path() . '/storage/data/' . $name;
 }
 
 function store_read_json(string $path): array
@@ -105,7 +111,88 @@ function store_require_string_list(mixed $value, string $field): array
     return array_keys($result);
 }
 
-function store_validate_signed_distribution(array $extension): void
+function store_permissions_digest(array $extension): string
+{
+    $permissions = store_require_string_list($extension['permissions'] ?? null, 'permissions');
+    $hostPermissions = store_require_string_list($extension['hostPermissions'] ?? null, 'hostPermissions');
+    sort($permissions, SORT_STRING);
+    sort($hostPermissions, SORT_STRING);
+
+    return hash('sha256', json_encode([
+        'permissions' => $permissions,
+        'hostPermissions' => $hostPermissions,
+    ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+}
+
+function store_load_trusted_keys(): array
+{
+    $data = store_read_json(store_data_path('trusted-keys.json'));
+    if (($data['schemaVersion'] ?? null) !== GHOSIUM_STORE_SCHEMA_VERSION) {
+        throw new RuntimeException('Unsupported trusted-key schema.');
+    }
+    if (!store_valid_timestamp((string)($data['updatedAt'] ?? ''))) {
+        throw new RuntimeException('Trusted-key updatedAt is invalid.');
+    }
+
+    $keys = $data['keys'] ?? null;
+    if (!is_array($keys) || !array_is_list($keys)) {
+        throw new RuntimeException('Trusted keys must be a JSON array.');
+    }
+
+    $seen = [];
+    foreach ($keys as $key) {
+        if (!is_array($key)) {
+            throw new RuntimeException('Trusted-key entry must be an object.');
+        }
+
+        $keyId = (string)($key['keyId'] ?? '');
+        if (preg_match('/\A[a-z0-9][a-z0-9._-]{2,63}\z/D', $keyId) !== 1 || isset($seen[$keyId])) {
+            throw new RuntimeException('Trusted key id is invalid or duplicated.');
+        }
+        $seen[$keyId] = true;
+
+        if (($key['algorithm'] ?? null) !== 'ed25519') {
+            throw new RuntimeException('Ghosium Store trust anchors must use Ed25519.');
+        }
+
+        $publicKey = base64_decode((string)($key['publicKey'] ?? ''), true);
+        if ($publicKey === false || strlen($publicKey) !== SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES) {
+            throw new RuntimeException('Trusted Ed25519 public key is invalid.');
+        }
+
+        $status = (string)($key['status'] ?? '');
+        if (!in_array($status, ['active', 'revoked'], true)) {
+            throw new RuntimeException('Trusted key status is invalid.');
+        }
+        if (!store_valid_timestamp((string)($key['createdAt'] ?? ''))) {
+            throw new RuntimeException('Trusted key createdAt is invalid.');
+        }
+
+        $revokedAt = $key['revokedAt'] ?? null;
+        if (($status === 'active' && $revokedAt !== null) || ($status === 'revoked' && (!is_string($revokedAt) || !store_valid_timestamp($revokedAt)))) {
+            throw new RuntimeException('Trusted key revocation metadata is invalid.');
+        }
+    }
+
+    return $data;
+}
+
+function store_find_trusted_key(array $trustedKeys, string $keyId): ?array
+{
+    foreach ($trustedKeys['keys'] as $key) {
+        if (($key['keyId'] ?? null) === $keyId) {
+            return $key;
+        }
+    }
+    return null;
+}
+
+function store_package_file(string $packagePath): string
+{
+    return store_root_path() . '/' . $packagePath;
+}
+
+function store_validate_signed_distribution(array $extension, array $trustedKeys, bool $deepVerify): void
 {
     $distribution = $extension['distribution'] ?? null;
     if (!is_array($distribution) || ($distribution['type'] ?? null) !== 'signed_package') {
@@ -128,6 +215,15 @@ function store_validate_signed_distribution(array $extension): void
     if (!store_valid_https_url($downloadUrl, 'store.ghosium.com')) {
         throw new RuntimeException('Approved extension downloadUrl must use store.ghosium.com HTTPS.');
     }
+    $urlParts = parse_url($downloadUrl);
+    if (
+        !is_array($urlParts) ||
+        (string)($urlParts['path'] ?? '') !== '/' . $packagePath ||
+        isset($urlParts['query']) ||
+        isset($urlParts['fragment'])
+    ) {
+        throw new RuntimeException('Approved extension downloadUrl must exactly match packagePath without query or fragment.');
+    }
 
     $sha256 = (string)($distribution['sha256'] ?? '');
     if (preg_match('/\A[a-f0-9]{64}\z/D', $sha256) !== 1) {
@@ -142,10 +238,14 @@ function store_validate_signed_distribution(array $extension): void
     if (preg_match('/\A[a-z0-9][a-z0-9._-]{2,63}\z/D', $keyId) !== 1) {
         throw new RuntimeException('Approved extension has an invalid keyId.');
     }
+    $trustedKey = store_find_trusted_key($trustedKeys, $keyId);
+    if ($trustedKey === null || ($trustedKey['status'] ?? null) !== 'active') {
+        throw new RuntimeException('Approved extension does not use an active trusted signing key.');
+    }
 
     $signature = (string)($distribution['signature'] ?? '');
     $signatureBytes = base64_decode($signature, true);
-    if ($signatureBytes === false || strlen($signatureBytes) !== 64) {
+    if ($signatureBytes === false || strlen($signatureBytes) !== SODIUM_CRYPTO_SIGN_BYTES) {
         throw new RuntimeException('Approved extension must provide a 64-byte Ed25519 signature.');
     }
 
@@ -159,9 +259,10 @@ function store_validate_signed_distribution(array $extension): void
         !is_array($permissionReview) ||
         ($permissionReview['status'] ?? null) !== 'approved' ||
         !store_valid_timestamp((string)($permissionReview['reviewedAt'] ?? '')) ||
-        trim((string)($permissionReview['reviewer'] ?? '')) === ''
+        trim((string)($permissionReview['reviewer'] ?? '')) === '' ||
+        (string)($permissionReview['permissionsSha256'] ?? '') !== store_permissions_digest($extension)
     ) {
-        throw new RuntimeException('Approved extension requires an approved permission review.');
+        throw new RuntimeException('Approved extension requires an approved permission review bound to its permission set.');
     }
 
     $malwareScan = $review['malwareScan'] ?? null;
@@ -174,9 +275,40 @@ function store_validate_signed_distribution(array $extension): void
     ) {
         throw new RuntimeException('Approved extension requires a passed malware scan bound to the package SHA-256.');
     }
+
+    $packageFile = store_package_file($packagePath);
+    if (!is_file($packageFile) || !is_readable($packageFile)) {
+        throw new RuntimeException('Approved extension package is unavailable.');
+    }
+    $packageBytes = filesize($packageFile);
+    if ($packageBytes === false || $packageBytes < 1 || $packageBytes > GHOSIUM_STORE_MAX_PACKAGE_BYTES) {
+        throw new RuntimeException('Approved extension package size is invalid.');
+    }
+
+    if (!$deepVerify) {
+        return;
+    }
+
+    if (!function_exists('sodium_crypto_sign_verify_detached')) {
+        throw new RuntimeException('PHP sodium extension is required for deep package verification.');
+    }
+
+    $actualSha256 = hash_file('sha256', $packageFile);
+    if (!is_string($actualSha256) || !hash_equals($sha256, strtolower($actualSha256))) {
+        throw new RuntimeException('Approved extension package SHA-256 does not match catalog metadata.');
+    }
+
+    $package = file_get_contents($packageFile);
+    if ($package === false) {
+        throw new RuntimeException('Unable to read approved extension package for signature verification.');
+    }
+    $publicKey = base64_decode((string)$trustedKey['publicKey'], true);
+    if ($publicKey === false || !sodium_crypto_sign_verify_detached($signatureBytes, $package, $publicKey)) {
+        throw new RuntimeException('Approved extension package Ed25519 signature verification failed.');
+    }
 }
 
-function store_validate_extension(array $extension): void
+function store_validate_extension(array $extension, array $trustedKeys, bool $deepVerify): void
 {
     $id = (string)($extension['id'] ?? '');
     if (!store_valid_id($id)) {
@@ -223,10 +355,10 @@ function store_validate_extension(array $extension): void
         return;
     }
 
-    store_validate_signed_distribution($extension);
+    store_validate_signed_distribution($extension, $trustedKeys, $deepVerify);
 }
 
-function store_load_catalog(): array
+function store_load_catalog(bool $deepVerify = false): array
 {
     $catalog = store_read_json(store_data_path('extensions.json'));
     if (($catalog['schemaVersion'] ?? null) !== GHOSIUM_STORE_SCHEMA_VERSION) {
@@ -241,12 +373,13 @@ function store_load_catalog(): array
         throw new RuntimeException('Catalog extensions must be a JSON array.');
     }
 
+    $trustedKeys = store_load_trusted_keys();
     $ids = [];
     foreach ($extensions as $extension) {
         if (!is_array($extension)) {
             throw new RuntimeException('Catalog extension entry must be an object.');
         }
-        store_validate_extension($extension);
+        store_validate_extension($extension, $trustedKeys, $deepVerify);
         $id = (string)$extension['id'];
         if (isset($ids[$id])) {
             throw new RuntimeException('Catalog contains duplicate extension ids.');
@@ -323,6 +456,26 @@ function store_revocation_for(array $revocations, string $id, string $version): 
         }
     }
     return null;
+}
+
+function store_public_catalog(array $catalog, array $revocations): array
+{
+    $extensions = [];
+    foreach ($catalog['extensions'] as $extension) {
+        $copy = $extension;
+        $revocation = store_revocation_for($revocations, (string)$extension['id'], (string)$extension['version']);
+        $copy['revoked'] = $revocation !== null;
+        if ($revocation !== null) {
+            unset($copy['distribution']);
+        }
+        $extensions[] = $copy;
+    }
+
+    return [
+        'schemaVersion' => GHOSIUM_STORE_SCHEMA_VERSION,
+        'updatedAt' => $catalog['updatedAt'],
+        'extensions' => $extensions,
+    ];
 }
 
 function store_json_response(array $payload, int $status = 200, string $cacheControl = 'public, max-age=300'): never

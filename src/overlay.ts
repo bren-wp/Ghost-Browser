@@ -9,12 +9,14 @@ function desiredState(): boolean {
 }
 
 function apply(force: boolean): Promise<void> {
-  queue = queue.then(async () => {
-    const desired = desiredState();
-    if (!force && desired === applied) return;
-    await invoke("set_overlay_open", { open: desired });
-    applied = desired;
-  });
+  queue = queue
+    .catch(() => undefined)
+    .then(async () => {
+      const desired = desiredState();
+      if (!force && desired === applied) return;
+      await invoke("set_overlay_open", { open: desired });
+      applied = desired;
+    });
   return queue;
 }
 

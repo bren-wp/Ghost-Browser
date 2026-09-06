@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="hr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="referrer" content="no-referrer">
+  <title>Ghosium Browser</title>
+  <link rel="stylesheet" href="newtab.css">
+</head>
+<body>
+  <main class="shell">
+    <div class="aurora aurora-a" aria-hidden="true"></div>
+    <div class="aurora aurora-b" aria-hidden="true"></div>
+
+    <section class="hero" aria-labelledby="title">
+      <img class="mark" src="ghosium-mark.svg" alt="" width="96" height="96">
+      <p class="eyebrow">PRIVATE BY DESIGN</p>
+      <h1 id="title">Browse the web,<br>stay <span>unseen.</span></h1>
+      <p class="lead">Chromium kompatibilnost, Ghosium privatnosni sloj i podaci koji ostaju u lokalnom profilu.</p>
+
+      <form class="search" action="https://duckduckgo.com/" method="get" role="search">
+        <label class="sr-only" for="q">Pretraži web</label>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg>
+        <input id="q" name="q" type="search" autocomplete="off" spellcheck="false" placeholder="Pretraži web ili koristi adresnu traku">
+      </form>
+
+      <div class="chips" aria-label="Ghosium zaštita">
+        <span><strong>Ghosium Shield</strong> trackeri</span>
+        <span><strong>Ghosium Guard</strong> dozvole</span>
+        <span><strong>Chromium</strong> web engine</span>
+        <span><strong>Local profile</strong> vaši podaci</span>
+      </div>
+
+      <div class="cards">
+        <article>
+          <small>● AKTIVNO</small>
+          <strong>Tracker zaštita</strong>
+          <p>Statična Manifest V3 pravila blokiraju poznate third-party oglasne i analitičke mreže bez udaljenog Ghosium servisa.</p>
+        </article>
+        <article>
+          <small>● LOKALNO</small>
+          <strong>Privatni profil</strong>
+          <p>Ghosium launcher koristi vlastiti lokalni Chromium profil i ne uključuje Google Sync.</p>
+        </article>
+        <article>
+          <small>● NATIVE</small>
+          <strong>Chrome-style opcije</strong>
+          <p>Postavke, favoriti, povijest, preuzimanja, ekstenzije, DevTools i site permissions dolaze izravno iz Chromiuma.</p>
+        </article>
+      </div>
+
+      <p class="hint">Za postavke privatnosti, lozinke, ekstenzije i dozvole otvorite Chromium izbornik gore desno.</p>
+    </section>
+  </main>
+</body>
+</html>

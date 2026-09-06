@@ -1,5 +1,0 @@
-Ghosium Browser bundles Inter 4.1 locally.
-Upstream: https://github.com/rsms/inter/releases/tag/v4.1
-File: fonts/inter-var.woff2
-SHA256: 693b77d4f32ee9b8bfc995589b5fad5e99adf2832738661f5402f9978429a8e3
-Weights used by Ghosium: 400, 500, 600, 700, 800 (variable font range).

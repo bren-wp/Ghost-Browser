@@ -2,6 +2,8 @@ mod browser;
 mod mail;
 mod privacy;
 mod profile;
+#[cfg(test)]
+mod profile_tests;
 mod search;
 mod vault;
 #[cfg(all(test, windows))]

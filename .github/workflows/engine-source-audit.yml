@@ -9,6 +9,7 @@ on:
       - 'ENGINE_SOURCE_REVISION'
       - 'engine/**'
       - 'scripts/*engine*.ps1'
+      - 'scripts/generate-engine-brand-assets.py'
       - '.github/workflows/engine-source-audit.yml'
   workflow_dispatch:
 
@@ -46,6 +47,26 @@ jobs:
               throw "PowerShell parser errors found in $path"
             }
           }
+
+      - name: Validate deterministic brand asset generator
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/generate-engine-brand-assets.py
+          asset_root="${RUNNER_TEMP}/ghosium-brand-assets"
+          python3 scripts/generate-engine-brand-assets.py "$asset_root"
+          python3 - "$asset_root" <<'PY'
+          from pathlib import Path
+          import sys
+
+          root = Path(sys.argv[1])
+          png = root / 'chrome/app/theme/default_100_percent/chromium/product_logo_32.png'
+          ico = root / 'chrome/app/theme/chromium/win/chromium.ico'
+          assert png.read_bytes().startswith(b'\x89PNG\r\n\x1a\n')
+          assert ico.read_bytes().startswith(b'\x00\x00\x01\x00')
+          assert png.stat().st_size > 100
+          assert ico.stat().st_size > 1000
+          PY
 
       - name: Verify Ghosium source contract
         shell: pwsh

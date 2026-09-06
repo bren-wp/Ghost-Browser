@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "product": {
+    "name": "Ghosium Browser",
+    "shortName": "Ghosium",
+    "publisher": "Brendigo",
+    "windowsCompanyName": "Brendigo",
+    "description": "Ghosium Browser is a fast, privacy-focused web browser by Brendigo."
+  },
+  "source": {
+    "snapshotRevision": "1693066",
+    "commit": "fac978ddceaae0358a2bd69e20a5156ec8dc86ab"
+  },
+  "productUrls": {
+    "home": "https://ghosium.com/",
+    "search": "https://search.ghosium.com/",
+    "store": "https://store.ghosium.com/",
+    "terms": "https://ghosium.com/legal/terms",
+    "privacy": "https://ghosium.com/legal/privacy-policy",
+    "licenses": "https://ghosium.com/legal/licenses",
+    "support": "https://ghosium.com/support",
+    "security": "https://ghosium.com/security"
+  },
+  "allowedProductUrls": [
+    "https://ghosium.com/",
+    "https://search.ghosium.com/",
+    "https://store.ghosium.com/",
+    "https://ghosium.com/legal/terms",
+    "https://ghosium.com/legal/privacy-policy",
+    "https://ghosium.com/legal/licenses",
+    "https://ghosium.com/support",
+    "https://ghosium.com/security"
+  ],
+  "locales": {
+    "default": "en-US",
+    "required": "hr",
+    "supported": [
+      "en-US",
+      "hr",
+      "de",
+      "fr",
+      "es",
+      "it",
+      "pt-PT",
+      "pt-BR",
+      "nl",
+      "pl",
+      "cs",
+      "sk",
+      "sl",
+      "hu",
+      "ro",
+      "bg",
+      "el",
+      "tr",
+      "ru",
+      "uk",
+      "sv",
+      "da",
+      "nb",
+      "fi",
+      "ja",
+      "ko",
+      "zh-CN",
+      "zh-TW",
+      "ar",
+      "he"
+    ]
+  },
+  "legal": {
+    "preserveThirdPartyLicenses": true,
+    "preserveCopyrightNotices": true,
+    "preserveAttribution": true,
+    "thirdPartySurface": "legal/third-party"
+  },
+  "securityInvariants": {
+    "sandbox": "required",
+    "processIsolation": "required",
+    "certificateValidation": "required",
+    "extensionSignatureVerification": "required",
+    "updateSignatureVerification": "required"
+  }
+}

@@ -12,6 +12,17 @@ on:
       - 'scripts/generate-engine-brand-assets.py'
       - '.github/workflows/engine-source-audit.yml'
       - '.github/workflows/full-source-windows-build.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'ENGINE_REVISION'
+      - 'ENGINE_SOURCE_REVISION'
+      - 'engine/**'
+      - 'scripts/*engine*.ps1'
+      - 'scripts/generate-engine-brand-assets.py'
+      - '.github/workflows/engine-source-audit.yml'
+      - '.github/workflows/full-source-windows-build.yml'
   workflow_dispatch:
 
 permissions:

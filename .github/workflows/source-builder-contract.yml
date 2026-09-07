@@ -5,6 +5,8 @@ on:
     branches:
       - main
     paths:
+      - 'ENGINE_SOURCE_REVISION'
+      - 'DEPOT_TOOLS_REVISION'
       - 'scripts/verify-source-builder-host.ps1'
       - 'scripts/bootstrap-engine-source.ps1'
       - 'scripts/verify-engine-build-output.ps1'
@@ -15,6 +17,8 @@ on:
     branches:
       - main
     paths:
+      - 'ENGINE_SOURCE_REVISION'
+      - 'DEPOT_TOOLS_REVISION'
       - 'scripts/verify-source-builder-host.ps1'
       - 'scripts/bootstrap-engine-source.ps1'
       - 'scripts/verify-engine-build-output.ps1'
@@ -30,11 +34,60 @@ jobs:
   builder-contract:
     name: Verify full-source builder readiness contract
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Validate pinned revision files
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_revision="$(tr -d '\r\n ' < ENGINE_SOURCE_REVISION)"
+          depot_revision="$(tr -d '\r\n ' < DEPOT_TOOLS_REVISION)"
+          [[ "$source_revision" =~ ^[0-9a-f]{40}$ ]] || { echo 'ENGINE_SOURCE_REVISION must be one 40-character Git commit.' >&2; exit 1; }
+          [[ "$depot_revision" =~ ^[0-9a-f]{40}$ ]] || { echo 'DEPOT_TOOLS_REVISION must be one 40-character Git commit.' >&2; exit 1; }
+
+      - name: Verify depot_tools pin matches pinned Chromium DEPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_revision="$(tr -d '\r\n ' < ENGINE_SOURCE_REVISION)"
+          depot_revision="$(tr -d '\r\n ' < DEPOT_TOOLS_REVISION)"
+          encoded="${RUNNER_TEMP}/chromium-DEPS.b64"
+          deps="${RUNNER_TEMP}/chromium-DEPS"
+
+          curl --fail --silent --show-error --location --retry 5 --retry-all-errors \
+            "https://chromium.googlesource.com/chromium/src/+/${source_revision}/DEPS?format=TEXT" \
+            --output "$encoded"
+          base64 --decode "$encoded" > "$deps"
+
+          python3 - "$deps" "$depot_revision" <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          text = Path(sys.argv[1]).read_text(encoding='utf-8')
+          expected = sys.argv[2]
+          pattern = re.compile(
+              r"'src/third_party/depot_tools'\s*:\s*"
+              r"Var\('chromium_git'\)\s*\+\s*"
+              r"'/chromium/tools/depot_tools\.git'\s*\+\s*"
+              r"'@'\s*\+\s*'([0-9a-f]{40})'",
+              re.MULTILINE,
+          )
+          match = pattern.search(text)
+          if not match:
+              raise SystemExit('Pinned Chromium DEPS depot_tools revision entry was not found.')
+          actual = match.group(1)
+          if actual != expected:
+              raise SystemExit(
+                  f'DEPOT_TOOLS_REVISION mismatch: Ghosium pins {expected}, '
+                  f'but pinned Chromium DEPS requires {actual}.'
+              )
+          print(f'Pinned Chromium DEPS and Ghosium agree on depot_tools {actual}.')
+          PY
 
       - name: Validate builder PowerShell
         shell: pwsh
@@ -64,6 +117,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $script = Get-Content 'scripts/verify-source-builder-host.ps1' -Raw
           foreach ($required in @(
+            "Join-Path `$repoRoot 'DEPOT_TOOLS_REVISION'",
+            '`$expectedDepotToolsRevision'.Replace('`$','$'),
+            'depot_tools revision mismatch',
             "`$requiredVisualStudioMajor = 18",
             "`$requiredWindowsSdk = '10.0.28000.2270'",
             '10.0.26100.3323',
@@ -84,6 +140,7 @@ jobs:
             'DEPOT_TOOLS_UPDATE',
             'GIT_TERMINAL_PROMPT',
             'chromium.googlesource.com/chromium/tools/depot_tools',
+            'expectedDepotToolsRevision',
             'depotToolsRevision',
             "Require-Command -Name 'fetch'",
             "Require-Command -Name 'gclient'",
@@ -198,6 +255,8 @@ jobs:
           grep -Fq 'Visual Studio 2026' "$doc"
           grep -Fq '10.0.28000.2270' "$doc"
           grep -Fq '10.0.26100.3323' "$doc"
+          grep -Fq 'DEPOT_TOOLS_REVISION' "$doc"
+          grep -Fq '81577f19a8497ba7e41afac322e8f03553a863ec' "$doc"
           grep -Fq 'DEPOT_TOOLS_WIN_TOOLCHAIN' "$doc"
           grep -Fq 'DEPOT_TOOLS_UPDATE' "$doc"
           grep -Fq 'GIT_TERMINAL_PROMPT' "$doc"

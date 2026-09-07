@@ -1,0 +1,134 @@
+name: Ghosium Source Builder Contract
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'scripts/verify-source-builder-host.ps1'
+      - 'docs/SOURCE_BUILDER_SETUP.md'
+      - '.github/workflows/full-source-windows-build.yml'
+      - '.github/workflows/source-builder-contract.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/verify-source-builder-host.ps1'
+      - 'docs/SOURCE_BUILDER_SETUP.md'
+      - '.github/workflows/full-source-windows-build.yml'
+      - '.github/workflows/source-builder-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  builder-contract:
+    name: Verify full-source builder readiness contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Validate builder preflight PowerShell
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/verify-source-builder-host.ps1'),
+            [ref]$tokens,
+            [ref]$errors
+          )
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw 'PowerShell parser errors found in source builder preflight.'
+          }
+
+      - name: Verify pinned Chromium host requirements
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $script = Get-Content 'scripts/verify-source-builder-host.ps1' -Raw
+          foreach ($required in @(
+            "`$requiredVisualStudioMajor = 18",
+            "`$requiredWindowsSdk = '10.0.28000.2270'",
+            "10.0.26100.3323",
+            "`$minimumRamGiB = 8",
+            "`$recommendedRamGiB = 32",
+            "`$minimumFreshFreeGiB = 120",
+            "`$minimumReuseFreeGiB = 60",
+            'Microsoft.VisualStudio.Workload.NativeDesktop',
+            'Microsoft.VisualStudio.Component.VC.ATLMFC',
+            "'NTFS'",
+            "'core.autocrlf'",
+            "'core.filemode'",
+            "'core.fscache'",
+            "'core.longpaths'",
+            "DEPOT_TOOLS_WIN_TOOLCHAIN",
+            "Require-Command -Name 'fetch'",
+            "Require-Command -Name 'gclient'",
+            "Require-Command -Name 'gn'",
+            "Require-Command -Name 'autoninja'",
+            "Require-Command -Name 'python3'",
+            'GHOSIUM-BUILDER-READY.json'
+          )) {
+            if (!$script.Contains($required) -and $required -ne 'GHOSIUM-BUILDER-READY.json') {
+              throw "Builder preflight is missing required invariant: $required"
+            }
+          }
+          if ($script -match '(?i)api[_-]?key|client_secret|private[_-]?key|github_token|personal access token') {
+            throw 'Builder readiness script must not contain credentials or product API secrets.'
+          }
+
+      - name: Verify full-source workflow remains manual and self-hosted
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workflow = Get-Content '.github/workflows/full-source-windows-build.yml' -Raw
+          foreach ($required in @(
+            'workflow_dispatch:',
+            'self-hosted',
+            'Windows',
+            'X64',
+            'ghosium-source-builder',
+            "DEPOT_TOOLS_WIN_TOOLCHAIN: '0'",
+            'verify-source-builder-host.ps1',
+            'GHOSIUM-BUILDER-READY.json',
+            'bootstrap-engine-source.ps1',
+            'apply-engine-branding.ps1',
+            'configure-engine-build.ps1',
+            'autoninja -C out/Ghosium chrome mini_installer',
+            'verify-engine-build-output.ps1',
+            'GHOSIUM-SOURCE-BUILD.json',
+            'SHA256SUMS.txt',
+            'actions/upload-artifact@v4'
+          )) {
+            if (!$workflow.Contains($required)) {
+              throw "Full-source workflow is missing builder/build invariant: $required"
+            }
+          }
+          if ($workflow -match '(?m)^\s*pull_request\s*:') {
+            throw 'The heavyweight Chromium source build must not run automatically on pull requests.'
+          }
+          if ($workflow -match '(?m)^\s*push\s*:') {
+            throw 'The heavyweight Chromium source build must remain an explicit manual workflow.'
+          }
+
+      - name: Verify builder setup documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          doc='docs/SOURCE_BUILDER_SETUP.md'
+          grep -Fq 'ghosium-source-builder' "$doc"
+          grep -Fq 'Visual Studio 2026' "$doc"
+          grep -Fq '10.0.28000.2270' "$doc"
+          grep -Fq '10.0.26100.3323' "$doc"
+          grep -Fq 'DEPOT_TOOLS_WIN_TOOLCHAIN' "$doc"
+          grep -Fq 'GHOSIUM_SOURCE_WORK' "$doc"
+          grep -Fq 'verify-source-builder-host.ps1' "$doc"
+          grep -Fq 'autoninja -C out/Ghosium chrome mini_installer' "$doc"
+          grep -Fq 'Do not commit runner tokens' "$doc"

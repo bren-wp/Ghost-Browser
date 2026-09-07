@@ -48,7 +48,7 @@ function Find-Makensis {
 
 $existing = Find-Makensis
 if ($existing) {
-  Write-Host "Using existing verified NSIS $expectedVersion: $existing"
+  Write-Host "Using existing verified NSIS ${expectedVersion}: $existing"
   Write-Output $existing
   exit 0
 }

@@ -90,7 +90,12 @@ jobs:
             "Require-Command -Name 'gn'",
             "Require-Command -Name 'autoninja'",
             "Require-Command -Name 'python3'",
-            "`$WorkRoot = 'C:\src\ghosium-chromium'"
+            "`$WorkRoot = 'C:\src\ghosium-chromium'",
+            "Join-Path `$resolvedWorkRoot 'src\.git'",
+            "Join-Path `$resolvedWorkRoot '.gclient'",
+            "`$workspaceState = 'fresh-empty'",
+            "`$workspaceState = 'reusable-complete'",
+            'nonempty but incomplete'
           )) {
             if (!$script.Contains($required)) {
               throw "Builder preflight is missing required invariant: $required"
@@ -133,7 +138,10 @@ jobs:
             'ghosium-source-runtime-ok',
             'sandboxDisabled = $false',
             'Start-Process',
-            'runtimeSmokePassed'
+            'runtimeSmokePassed',
+            '`$runtimeSmokeTimeoutSeconds = 60'.Replace('`$','$'),
+            'WaitForExit($runtimeSmokeTimeoutSeconds * 1000)',
+            'Stop-Process -Id $process.Id -Force'
           )) {
             if (!$verifier.Contains($required)) {
               throw "Source-built binary verifier is missing runtime gate: $required"

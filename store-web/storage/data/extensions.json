@@ -5,7 +5,7 @@
     {
       "id": "ghosium-privacy",
       "name": "Ghosium Privacy",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "manifestVersion": 3,
       "status": "built_in",
       "description": "Built-in declarative tracker protection and Ghosium new-tab experience.",
@@ -25,7 +25,7 @@
     {
       "id": "ghosium-search",
       "name": "Ghosium Search",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "manifestVersion": 3,
       "status": "built_in",
       "description": "Built-in Ghosium Search integration for the browser search experience.",

@@ -7,6 +7,7 @@ on:
     paths:
       - 'scripts/verify-source-builder-host.ps1'
       - 'scripts/bootstrap-engine-source.ps1'
+      - 'scripts/verify-engine-build-output.ps1'
       - 'docs/SOURCE_BUILDER_SETUP.md'
       - '.github/workflows/full-source-windows-build.yml'
       - '.github/workflows/source-builder-contract.yml'
@@ -16,6 +17,7 @@ on:
     paths:
       - 'scripts/verify-source-builder-host.ps1'
       - 'scripts/bootstrap-engine-source.ps1'
+      - 'scripts/verify-engine-build-output.ps1'
       - 'docs/SOURCE_BUILDER_SETUP.md'
       - '.github/workflows/full-source-windows-build.yml'
       - '.github/workflows/source-builder-contract.yml'
@@ -40,7 +42,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           foreach ($path in @(
             'scripts/verify-source-builder-host.ps1',
-            'scripts/bootstrap-engine-source.ps1'
+            'scripts/bootstrap-engine-source.ps1',
+            'scripts/verify-engine-build-output.ps1'
           )) {
             $tokens = $null
             $errors = $null
@@ -63,11 +66,13 @@ jobs:
           foreach ($required in @(
             "`$requiredVisualStudioMajor = 18",
             "`$requiredWindowsSdk = '10.0.28000.2270'",
-            "10.0.26100.3323",
+            '10.0.26100.3323',
             "`$minimumRamGiB = 8",
             "`$recommendedRamGiB = 32",
             "`$minimumFreshFreeGiB = 120",
             "`$minimumReuseFreeGiB = 60",
+            'RuntimeInformation]::OSArchitecture',
+            "'X64'",
             'Microsoft.VisualStudio.Workload.NativeDesktop',
             'Microsoft.VisualStudio.Component.VC.ATLMFC',
             "'NTFS'",
@@ -76,11 +81,16 @@ jobs:
             "'core.fscache'",
             "'core.longpaths'",
             'DEPOT_TOOLS_WIN_TOOLCHAIN',
+            'DEPOT_TOOLS_UPDATE',
+            'GIT_TERMINAL_PROMPT',
+            'chromium.googlesource.com/chromium/tools/depot_tools',
+            'depotToolsRevision',
             "Require-Command -Name 'fetch'",
             "Require-Command -Name 'gclient'",
             "Require-Command -Name 'gn'",
             "Require-Command -Name 'autoninja'",
-            "Require-Command -Name 'python3'"
+            "Require-Command -Name 'python3'",
+            "`$WorkRoot = 'C:\src\ghosium-chromium'"
           )) {
             if (!$script.Contains($required)) {
               throw "Builder preflight is missing required invariant: $required"
@@ -88,6 +98,9 @@ jobs:
           }
           if ($script -match '(?i)api[_-]?key|client_secret|private[_-]?key|github_token|personal access token') {
             throw 'Builder readiness script must not contain credentials or product API secrets.'
+          }
+          if ($script.Contains("Join-Path `$env:RUNNER_TEMP 'ghosium-chromium'")) {
+            throw 'Chromium source workspace must not silently fall back to RUNNER_TEMP.'
           }
 
       - name: Verify absolute workspace bootstrap safety
@@ -108,6 +121,28 @@ jobs:
             throw 'Chromium bootstrap must not append a fully-qualified Windows destination to the current repository path.'
           }
 
+      - name: Verify full-source runtime gate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $verifier = Get-Content 'scripts/verify-engine-build-output.ps1' -Raw
+          foreach ($required in @(
+            '[switch]$RunRuntimeSmoke',
+            "'--headless=new'",
+            "'--dump-dom'",
+            'ghosium-source-runtime-ok',
+            'sandboxDisabled = $false',
+            'Start-Process',
+            'runtimeSmokePassed'
+          )) {
+            if (!$verifier.Contains($required)) {
+              throw "Source-built binary verifier is missing runtime gate: $required"
+            }
+          }
+          if ($verifier -match "(?i)'--no-sandbox'") {
+            throw 'Source-built runtime smoke must not disable the Chromium sandbox.'
+          }
+
       - name: Verify full-source workflow remains manual and self-hosted
         shell: pwsh
         run: |
@@ -120,6 +155,9 @@ jobs:
             'X64',
             'ghosium-source-builder',
             "DEPOT_TOOLS_WIN_TOOLCHAIN: '0'",
+            "DEPOT_TOOLS_UPDATE: '0'",
+            "GIT_TERMINAL_PROMPT: '0'",
+            'persist-credentials: false',
             'verify-source-builder-host.ps1',
             'GHOSIUM-BUILDER-READY.json',
             'bootstrap-engine-source.ps1',
@@ -127,6 +165,7 @@ jobs:
             'configure-engine-build.ps1',
             'autoninja -C out/Ghosium chrome mini_installer',
             'verify-engine-build-output.ps1',
+            '-RunRuntimeSmoke',
             'GHOSIUM-SOURCE-BUILD.json',
             'SHA256SUMS.txt',
             'actions/upload-artifact@v4'
@@ -152,7 +191,10 @@ jobs:
           grep -Fq '10.0.28000.2270' "$doc"
           grep -Fq '10.0.26100.3323' "$doc"
           grep -Fq 'DEPOT_TOOLS_WIN_TOOLCHAIN' "$doc"
+          grep -Fq 'DEPOT_TOOLS_UPDATE' "$doc"
+          grep -Fq 'GIT_TERMINAL_PROMPT' "$doc"
           grep -Fq 'GHOSIUM_SOURCE_WORK' "$doc"
           grep -Fq 'verify-source-builder-host.ps1' "$doc"
           grep -Fq 'autoninja -C out/Ghosium chrome mini_installer' "$doc"
+          grep -Fq 'runtime smoke' "$doc"
           grep -Fq 'Do not commit runner tokens' "$doc"

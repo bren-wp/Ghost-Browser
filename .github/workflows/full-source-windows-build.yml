@@ -21,10 +21,15 @@ jobs:
     timeout-minutes: 360
     env:
       DEPOT_TOOLS_WIN_TOOLCHAIN: '0'
+      DEPOT_TOOLS_UPDATE: '0'
+      GIT_TERMINAL_PROMPT: '0'
 
     steps:
       - name: Checkout Ghosium source tooling
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          fetch-depth: 1
 
       - name: Validate source builder
         id: builder
@@ -97,7 +102,8 @@ jobs:
           ./scripts/verify-engine-build-output.ps1 `
             -SourceRoot $src `
             -OutDir 'out/Ghosium' `
-            -ProvenancePath (Join-Path $PWD 'artifacts/full-source/GHOSIUM-SOURCE-BUILD.json')
+            -ProvenancePath (Join-Path $PWD 'artifacts/full-source/GHOSIUM-SOURCE-BUILD.json') `
+            -RunRuntimeSmoke
 
           $out = Join-Path $src 'out/Ghosium'
           Copy-Item (Join-Path $out 'mini_installer.exe') 'artifacts/full-source/Ghosium-Browser-Source-Setup.exe' -Force
@@ -126,3 +132,4 @@ jobs:
           path: artifacts/full-source/
           if-no-files-found: error
           retention-days: 14
+          compression-level: 0

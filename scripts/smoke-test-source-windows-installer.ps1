@@ -29,6 +29,7 @@ $runtimeStdout = Join-Path $smokeRoot 'runtime.stdout.txt'
 $runtimeStderr = Join-Path $smokeRoot 'runtime.stderr.txt'
 $installLog = Join-Path $smokeRoot 'install.log'
 $uninstallLog = Join-Path $smokeRoot 'uninstall.log'
+$pathTrimCharacters = [char[]]@('\', '/')
 
 New-Item -ItemType Directory -Force -Path $smokeRoot | Out-Null
 
@@ -41,11 +42,14 @@ function Get-GhosiumUninstallEntries {
     Get-ChildItem $uninstallRoot -ErrorAction SilentlyContinue |
       ForEach-Object {
         $property = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
-        if ($property -and [string]$property.DisplayName -eq 'Ghosium Browser') {
-          [pscustomobject]@{
-            KeyPath = $_.PSPath
-            KeyName = $_.PSChildName
-            Property = $property
+        if ($property) {
+          $displayNameProperty = $property.PSObject.Properties['DisplayName']
+          if ($displayNameProperty -and [string]$displayNameProperty.Value -eq 'Ghosium Browser') {
+            [pscustomobject]@{
+              KeyPath = $_.PSPath
+              KeyName = $_.PSChildName
+              Property = $property
+            }
           }
         }
       }
@@ -59,6 +63,40 @@ function Get-LogTail {
     return '(installer log was not created)'
   }
   return ((Get-Content $Path -Tail 80 -ErrorAction SilentlyContinue) -join [Environment]::NewLine)
+}
+
+function Start-ProcessWithTimeout {
+  param(
+    [Parameter(Mandatory = $true)][string]$FilePath,
+    [Parameter(Mandatory = $true)][string[]]$ArgumentList,
+    [Parameter(Mandatory = $true)][int]$TimeoutSeconds,
+    [Parameter(Mandatory = $true)][string]$Description,
+    [Parameter(Mandatory = $false)][string]$RedirectStandardOutput,
+    [Parameter(Mandatory = $false)][string]$RedirectStandardError
+  )
+
+  $startParams = @{
+    FilePath = $FilePath
+    ArgumentList = $ArgumentList
+    PassThru = $true
+  }
+  if ($RedirectStandardOutput) {
+    $startParams.RedirectStandardOutput = $RedirectStandardOutput
+  }
+  if ($RedirectStandardError) {
+    $startParams.RedirectStandardError = $RedirectStandardError
+  }
+
+  $process = Start-Process @startParams
+  if (!$process.WaitForExit($TimeoutSeconds * 1000)) {
+    try {
+      Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    } catch {
+      Write-Warning "Unable to terminate timed-out process $($process.Id): $($_.Exception.Message)"
+    }
+    throw "$Description timed out after $TimeoutSeconds seconds."
+  }
+  return $process
 }
 
 function Wait-UntilRemoved {
@@ -110,7 +148,6 @@ $runtimeExitCode = $null
 $runtimeSmokePassed = $false
 $installedChromeVersion = $null
 $uninstallRegistryKey = $null
-$installedSetupPath = $null
 $cleanupAttempted = $false
 $completed = $false
 
@@ -122,9 +159,13 @@ try {
     '--verbose-logging',
     '--do-not-launch-chrome',
     '--do-not-register-for-update-launch',
-    "--log-file=$installLog"
+    "--log-file=`"$installLog`""
   )
-  $install = Start-Process -FilePath $miniInstaller -ArgumentList $installArguments -Wait -PassThru
+  $install = Start-ProcessWithTimeout `
+    -FilePath $miniInstaller `
+    -ArgumentList $installArguments `
+    -TimeoutSeconds 180 `
+    -Description 'Source-built Ghosium mini_installer'
   $installExitCode = $install.ExitCode
   if ($installExitCode -ne 0) {
     throw "Source-built Ghosium mini_installer failed with exit code $installExitCode.`n$(Get-LogTail -Path $installLog)"
@@ -158,17 +199,21 @@ try {
   $entry = $entries[0]
   $uninstallRegistryKey = [string]$entry.KeyName
   $reg = $entry.Property
-  if (![string]$reg.UninstallString) {
+  $uninstallStringProperty = $reg.PSObject.Properties['UninstallString']
+  if (!$uninstallStringProperty -or ![string]$uninstallStringProperty.Value) {
     throw 'Installed Ghosium uninstall registration is missing UninstallString.'
   }
-  if ([string]$reg.UninstallString -notmatch '(?i)setup\.exe' -or [string]$reg.UninstallString -notmatch '(?i)--uninstall') {
-    throw "Installed Ghosium UninstallString is not setup.exe --uninstall based: '$($reg.UninstallString)'"
+  $uninstallString = [string]$uninstallStringProperty.Value
+  if ($uninstallString -notmatch '(?i)setup\.exe' -or $uninstallString -notmatch '(?i)--uninstall') {
+    throw "Installed Ghosium UninstallString is not setup.exe --uninstall based: '$uninstallString'"
   }
-  if ($reg.InstallLocation) {
-    $registeredInstall = [IO.Path]::GetFullPath([string]$reg.InstallLocation).TrimEnd('\', '/')
-    $expectedInstall = [IO.Path]::GetFullPath($installRoot).TrimEnd('\', '/')
+
+  $installLocationProperty = $reg.PSObject.Properties['InstallLocation']
+  if ($installLocationProperty -and [string]$installLocationProperty.Value) {
+    $registeredInstall = [IO.Path]::GetFullPath([string]$installLocationProperty.Value).TrimEnd($pathTrimCharacters)
+    $expectedInstall = [IO.Path]::GetFullPath($installRoot).TrimEnd($pathTrimCharacters)
     if ($registeredInstall -ne $expectedInstall) {
-      throw "Installed Ghosium InstallLocation mismatch: '$($reg.InstallLocation)'"
+      throw "Installed Ghosium InstallLocation mismatch: '$($installLocationProperty.Value)'"
     }
   }
 
@@ -176,9 +221,8 @@ try {
   if (!$installedSetup) {
     throw "Installed source-built setup.exe was not found under $installRoot"
   }
-  $installedSetupPath = $installedSetup.FullName
-  if ([string]$reg.UninstallString -notlike "*$($installedSetup.Name)*") {
-    throw "UninstallString does not reference the installed setup executable: '$($reg.UninstallString)'"
+  if ($uninstallString -notlike "*$($installedSetup.Name)*") {
+    throw "UninstallString does not reference the installed setup executable: '$uninstallString'"
   }
 
   # Exercise the installed layout, not the loose build-tree executable. This
@@ -190,15 +234,15 @@ try {
     '--disable-sync',
     '--no-pings',
     '--no-first-run',
-    "--user-data-dir=$runtimeProfile",
+    "--user-data-dir=`"$runtimeProfile`"",
     '--dump-dom',
     'data:text/html,<html><body>ghosium-source-installed-runtime-ok</body></html>'
   )
-  $runtime = Start-Process `
+  $runtime = Start-ProcessWithTimeout `
     -FilePath $installedChrome.FullName `
     -ArgumentList $runtimeArguments `
-    -Wait `
-    -PassThru `
+    -TimeoutSeconds 60 `
+    -Description 'Installed source-built Ghosium runtime smoke' `
     -RedirectStandardOutput $runtimeStdout `
     -RedirectStandardError $runtimeStderr
   $runtimeExitCode = $runtime.ExitCode
@@ -216,9 +260,13 @@ try {
     '--force-uninstall',
     '--delete-profile',
     '--verbose-logging',
-    "--log-file=$uninstallLog"
+    "--log-file=`"$uninstallLog`""
   )
-  $remove = Start-Process -FilePath $installedSetup.FullName -ArgumentList $uninstallArguments -Wait -PassThru
+  $remove = Start-ProcessWithTimeout `
+    -FilePath $installedSetup.FullName `
+    -ArgumentList $uninstallArguments `
+    -TimeoutSeconds 120 `
+    -Description 'Installed Ghosium setup.exe uninstall'
   $uninstallExitCode = $remove.ExitCode
   if ($uninstallExitCode -ne 0) {
     throw "Installed Ghosium setup.exe uninstall failed with exit code $uninstallExitCode.`n$(Get-LogTail -Path $uninstallLog)"
@@ -233,10 +281,8 @@ try {
     throw "Default Ghosium user-data directory remains after --delete-profile uninstall: $defaultUserDataRoot"
   }
 
-  $completed = $true
-
   if (!$ReportPath) {
-    $ReportPath = Join-Path $smokeRoot 'GHOSIUM-SOURCE-INSTALLER-SMOKE.json'
+    $ReportPath = Join-Path (Get-Location).Path 'GHOSIUM-SOURCE-INSTALLER-SMOKE.json'
   } elseif (![IO.Path]::IsPathRooted($ReportPath)) {
     $ReportPath = [IO.Path]::GetFullPath((Join-Path (Get-Location).Path $ReportPath))
   }
@@ -259,6 +305,7 @@ try {
     installedRuntimeSmoke = [ordered]@{
       passed = $runtimeSmokePassed
       exitCode = $runtimeExitCode
+      timeoutSeconds = 60
       sandboxDisabled = $false
       isolatedProfile = $true
     }
@@ -267,6 +314,7 @@ try {
       forceUninstall = $true
       deleteProfile = $true
       exitCode = $uninstallExitCode
+      timeoutSeconds = 120
       applicationDirectoryRemoved = !(Test-Path $installRoot)
       registrationRemoved = @(Get-GhosiumUninstallEntries).Count -eq 0
       defaultUserDataRemoved = !(Test-Path $defaultUserDataRoot)
@@ -275,6 +323,7 @@ try {
     verifiedUtc = [DateTime]::UtcNow.ToString('o')
   } | ConvertTo-Json -Depth 5 | Set-Content $ReportPath -Encoding utf8
 
+  $completed = $true
   Write-Host 'Source-built Ghosium mini_installer -> installed runtime -> registered setup.exe uninstall smoke test: OK'
   Write-Host "Installed engine version: $installedChromeVersion"
   Write-Host "Installer smoke provenance: $ReportPath"
@@ -285,11 +334,11 @@ finally {
     if ($cleanupSetup) {
       $cleanupAttempted = $true
       try {
-        Start-Process `
+        [void](Start-ProcessWithTimeout `
           -FilePath $cleanupSetup.FullName `
           -ArgumentList @('--uninstall', '--force-uninstall', '--delete-profile') `
-          -Wait `
-          -ErrorAction SilentlyContinue | Out-Null
+          -TimeoutSeconds 120 `
+          -Description 'Best-effort Ghosium cleanup uninstall')
       } catch {
         Write-Warning "Best-effort Ghosium cleanup failed after installer smoke error: $($_.Exception.Message)"
       }

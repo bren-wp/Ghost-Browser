@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'scripts/verify-source-builder-host.ps1'
+      - 'scripts/bootstrap-engine-source.ps1'
       - 'docs/SOURCE_BUILDER_SETUP.md'
       - '.github/workflows/full-source-windows-build.yml'
       - '.github/workflows/source-builder-contract.yml'
@@ -14,6 +15,7 @@ on:
       - main
     paths:
       - 'scripts/verify-source-builder-host.ps1'
+      - 'scripts/bootstrap-engine-source.ps1'
       - 'docs/SOURCE_BUILDER_SETUP.md'
       - '.github/workflows/full-source-windows-build.yml'
       - '.github/workflows/source-builder-contract.yml'
@@ -32,20 +34,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Validate builder preflight PowerShell
+      - name: Validate builder PowerShell
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $tokens = $null
-          $errors = $null
-          [void][System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path 'scripts/verify-source-builder-host.ps1'),
-            [ref]$tokens,
-            [ref]$errors
-          )
-          if ($errors.Count -gt 0) {
-            $errors | ForEach-Object { Write-Error $_.Message }
-            throw 'PowerShell parser errors found in source builder preflight.'
+          foreach ($path in @(
+            'scripts/verify-source-builder-host.ps1',
+            'scripts/bootstrap-engine-source.ps1'
+          )) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path),
+              [ref]$tokens,
+              [ref]$errors
+            )
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              throw "PowerShell parser errors found in $path"
+            }
           }
 
       - name: Verify pinned Chromium host requirements
@@ -68,20 +75,37 @@ jobs:
             "'core.filemode'",
             "'core.fscache'",
             "'core.longpaths'",
-            "DEPOT_TOOLS_WIN_TOOLCHAIN",
+            'DEPOT_TOOLS_WIN_TOOLCHAIN',
             "Require-Command -Name 'fetch'",
             "Require-Command -Name 'gclient'",
             "Require-Command -Name 'gn'",
             "Require-Command -Name 'autoninja'",
-            "Require-Command -Name 'python3'",
-            'GHOSIUM-BUILDER-READY.json'
+            "Require-Command -Name 'python3'"
           )) {
-            if (!$script.Contains($required) -and $required -ne 'GHOSIUM-BUILDER-READY.json') {
+            if (!$script.Contains($required)) {
               throw "Builder preflight is missing required invariant: $required"
             }
           }
           if ($script -match '(?i)api[_-]?key|client_secret|private[_-]?key|github_token|personal access token') {
             throw 'Builder readiness script must not contain credentials or product API secrets.'
+          }
+
+      - name: Verify absolute workspace bootstrap safety
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bootstrap = Get-Content 'scripts/bootstrap-engine-source.ps1' -Raw
+          foreach ($required in @(
+            '[IO.Path]::IsPathFullyQualified($Destination)',
+            '[IO.Path]::GetFullPath($Destination)',
+            "[IO.Path]::GetFullPath((Join-Path (Get-Location).Path `$Destination))"
+          )) {
+            if (!$bootstrap.Contains($required)) {
+              throw "Chromium bootstrap is missing absolute/relative workspace guard: $required"
+            }
+          }
+          if ($bootstrap.Contains("[IO.Path]::GetFullPath((Join-Path (Get-Location) `$Destination))")) {
+            throw 'Chromium bootstrap must not append a fully-qualified Windows destination to the current repository path.'
           }
 
       - name: Verify full-source workflow remains manual and self-hosted

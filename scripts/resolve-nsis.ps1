@@ -7,8 +7,7 @@ Set-StrictMode -Version Latest
 
 $expectedVersion = 'v3.12'
 $archiveUrl = 'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.12/nsis-3.12.zip'
-# Pinned NSIS 3.12 archive digest published by the Scoop package manifest.
-$archiveSha1 = '364fd795b0cafc1fbff3e966f103a8f8fc8fb7f1'
+$archiveSha256 = '56581f90db321581c5381193d796fffcf2d24b2f8fed2160a6c6a3baa67f2c4f'
 
 function Test-Makensis {
   param([Parameter(Mandatory = $true)][string]$Path)
@@ -49,32 +48,12 @@ function Find-Makensis {
 
 $existing = Find-Makensis
 if ($existing) {
-  Write-Host "Using existing NSIS $expectedVersion: $existing"
+  Write-Host "Using existing verified NSIS $expectedVersion: $existing"
   Write-Output $existing
   exit 0
 }
 
-$choco = Get-Command choco.exe -ErrorAction SilentlyContinue
-if ($choco) {
-  $delays = @(5, 15, 30)
-  for ($attempt = 0; $attempt -lt $delays.Count; $attempt++) {
-    Write-Host "Installing NSIS 3.12.0 with Chocolatey (attempt $($attempt + 1)/$($delays.Count))..."
-    & $choco.Source install nsis --version=3.12.0 --yes --no-progress --limit-output | Out-Host
-    $candidate = Find-Makensis
-    if ($candidate) {
-      Write-Host "Verified Chocolatey NSIS $expectedVersion: $candidate"
-      Write-Output $candidate
-      exit 0
-    }
-
-    if ($attempt -lt $delays.Count - 1) {
-      Write-Host "Chocolatey did not provide NSIS; retrying after $($delays[$attempt]) seconds."
-      Start-Sleep -Seconds $delays[$attempt]
-    }
-  }
-}
-
-Write-Host 'Chocolatey NSIS bootstrap unavailable; using verified official SourceForge archive fallback.'
+Write-Host 'No verified NSIS 3.12 installation found; using pinned official portable archive.'
 New-Item -ItemType Directory -Force -Path $Destination | Out-Null
 $archive = Join-Path $Destination 'nsis-3.12.zip'
 $extractRoot = Join-Path $Destination 'extract'
@@ -82,9 +61,9 @@ if (Test-Path $extractRoot) {
   Remove-Item $extractRoot -Recurse -Force
 }
 
-& curl.exe --fail --silent --show-error --location --retry 5 --retry-all-errors --connect-timeout 20 $archiveUrl --output $archive
+& curl.exe --fail --silent --show-error --location --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 $archiveUrl --output $archive
 if ($LASTEXITCODE -ne 0 -or !(Test-Path $archive -PathType Leaf)) {
-  throw 'Unable to download the official NSIS 3.12 fallback archive.'
+  throw 'Unable to download the official NSIS 3.12 portable archive.'
 }
 
 $archiveItem = Get-Item $archive
@@ -92,16 +71,16 @@ if ($archiveItem.Length -lt 1MB -or $archiveItem.Length -gt 10MB) {
   throw "Downloaded NSIS archive size is outside the expected range: $($archiveItem.Length) bytes"
 }
 
-$actualSha1 = (Get-FileHash $archive -Algorithm SHA1).Hash.ToLowerInvariant()
-if (![string]::Equals($actualSha1, $archiveSha1, [StringComparison]::Ordinal)) {
-  throw "NSIS fallback archive digest mismatch. Expected $archiveSha1; found $actualSha1"
+$actualSha256 = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+if (![string]::Equals($actualSha256, $archiveSha256, [StringComparison]::Ordinal)) {
+  throw "NSIS archive SHA-256 mismatch. Expected $archiveSha256; found $actualSha256"
 }
 
 Expand-Archive -Path $archive -DestinationPath $extractRoot -Force
 $fallback = Join-Path $extractRoot 'nsis-3.12\bin\makensis.exe'
 if (!(Test-Makensis -Path $fallback)) {
-  throw 'Verified NSIS archive did not provide the expected makensis v3.12 executable.'
+  throw 'Verified NSIS archive did not provide makensis v3.12.'
 }
 
-Write-Host "Verified official NSIS fallback: $fallback"
+Write-Host "Verified official NSIS portable toolchain: $fallback"
 Write-Output $fallback

@@ -16,6 +16,19 @@ if ($LASTEXITCODE -ne 0 -or $actualCommit -ne $expectedCommit) {
   throw "Refusing to brand an unpinned checkout. Expected $expectedCommit; found $actualCommit"
 }
 
+# A pinned commit is not sufficient if the checkout already contains local
+# edits. Refuse every tracked, untracked or submodule worktree change before
+# touching Chromium so accidental source/security modifications cannot become
+# part of a Ghosium build outside the reviewed branding transformation.
+$initialWorktreeStatus = @(& git -C $sourceRootResolved status --porcelain=v1 --untracked-files=all)
+if ($LASTEXITCODE -ne 0) {
+  throw 'Unable to verify the initial Chromium worktree state.'
+}
+if ($initialWorktreeStatus.Count -gt 0) {
+  $preview = ($initialWorktreeStatus | Select-Object -First 10) -join '; '
+  throw "Refusing to brand a dirty Chromium checkout. Reset or review all source changes first. Detected: $preview"
+}
+
 function Set-GritMessage {
   param(
     [Parameter(Mandatory = $true)][string]$Path,

@@ -222,6 +222,7 @@ jobs:
             "DEPOT_TOOLS_WIN_TOOLCHAIN: '0'",
             "DEPOT_TOOLS_UPDATE: '0'",
             "GIT_TERMINAL_PROMPT: '0'",
+            'actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09',
             'persist-credentials: false',
             'verify-source-builder-host.ps1',
             'GHOSIUM-BUILDER-READY.json',
@@ -233,7 +234,7 @@ jobs:
             '-RunRuntimeSmoke',
             'GHOSIUM-SOURCE-BUILD.json',
             'SHA256SUMS.txt',
-            'actions/upload-artifact@v4'
+            'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02'
           )) {
             if (!$workflow.Contains($required)) {
               throw "Full-source workflow is missing builder/build invariant: $required"
@@ -244,6 +245,9 @@ jobs:
           }
           if ($workflow -match '(?m)^\s*push\s*:') {
             throw 'The heavyweight Chromium source build must remain an explicit manual workflow.'
+          }
+          if ($workflow -match '(?im)^\s*uses:\s*actions/(?:checkout|upload-artifact)@v\d+') {
+            throw 'Security-sensitive actions in the self-hosted full-source workflow must use immutable commit SHAs, not mutable major tags.'
           }
 
       - name: Verify builder setup documentation

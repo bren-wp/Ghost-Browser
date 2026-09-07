@@ -17,6 +17,10 @@ $recommendedRamGiB = 32
 $recommendedLogicalProcessors = 16
 $minimumFreshFreeGiB = 120
 $minimumReuseFreeGiB = 60
+$officialDepotToolsOrigins = @(
+  'https://chromium.googlesource.com/chromium/tools/depot_tools.git',
+  'https://chromium.googlesource.com/chromium/tools/depot_tools'
+)
 
 function Require-Command {
   param([Parameter(Mandatory = $true)][string]$Name)
@@ -57,8 +61,19 @@ function Require-GitConfig {
 if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
   throw 'Ghosium full-source builds require a Windows host.'
 }
-if (![Environment]::Is64BitOperatingSystem) {
-  throw 'Ghosium full-source builds require 64-bit Windows.'
+
+$osArchitecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+if (![string]::Equals($osArchitecture, 'X64', [StringComparison]::OrdinalIgnoreCase)) {
+  throw "Ghosium full-source builds require Windows x64, not merely a 64-bit operating system. Found architecture: $osArchitecture"
+}
+if (![Environment]::Is64BitProcess) {
+  throw 'Ghosium full-source builder must run as a 64-bit process.'
+}
+
+$os = Get-CimInstance Win32_OperatingSystem
+$osVersion = [version]([string]$os.Version)
+if ($osVersion.Major -lt 10) {
+  throw "Pinned Chromium requires Windows 10 or newer; found $($os.Caption) $osVersion"
 }
 
 $git = Require-Command -Name 'git'
@@ -76,8 +91,37 @@ foreach ($tool in @($gclient, $gn, $autoninja, $python3)) {
   }
 }
 
+if (!(Test-Path (Join-Path $depotToolsRoot '.git') -PathType Container)) {
+  throw "depot_tools must be a Git checkout so its exact build-tool revision can be proven: $depotToolsRoot"
+}
+$depotToolsOrigin = (& $git.Source -C $depotToolsRoot remote get-url origin 2>$null | Select-Object -First 1)
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$depotToolsOrigin)) {
+  throw 'Unable to determine depot_tools origin remote.'
+}
+$depotToolsOrigin = ([string]$depotToolsOrigin).Trim().TrimEnd('/')
+if ($officialDepotToolsOrigins -notcontains $depotToolsOrigin) {
+  throw "depot_tools must originate from the official Chromium repository. Found: $depotToolsOrigin"
+}
+$depotToolsRevision = (& $git.Source -C $depotToolsRoot rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $depotToolsRevision -notmatch '^[0-9a-f]{40}$') {
+  throw "Unable to determine an exact depot_tools Git revision: '$depotToolsRevision'"
+}
+$depotToolsChanges = @(& $git.Source -C $depotToolsRoot status --porcelain=v1 --untracked-files=no)
+if ($LASTEXITCODE -ne 0) {
+  throw 'Unable to inspect depot_tools working tree state.'
+}
+if ($depotToolsChanges.Count -gt 0) {
+  throw 'depot_tools contains modified tracked files. The source builder requires a clean toolchain checkout.'
+}
+
 if ($env:DEPOT_TOOLS_WIN_TOOLCHAIN -ne '0') {
   throw "DEPOT_TOOLS_WIN_TOOLCHAIN must be set to 0 for the external Windows source builder; found '$($env:DEPOT_TOOLS_WIN_TOOLCHAIN)'"
+}
+if ($env:DEPOT_TOOLS_UPDATE -ne '0') {
+  throw "DEPOT_TOOLS_UPDATE must be set to 0 so depot_tools cannot auto-update during a reproducible build; found '$($env:DEPOT_TOOLS_UPDATE)'"
+}
+if ($env:GIT_TERMINAL_PROMPT -ne '0') {
+  throw "GIT_TERMINAL_PROMPT must be set to 0 so the unattended builder cannot hang on credential prompts; found '$($env:GIT_TERMINAL_PROMPT)'"
 }
 
 Require-GitConfig -Name 'core.autocrlf' -Expected 'false'
@@ -88,8 +132,6 @@ Require-GitConfig -Name 'core.longpaths' -Expected 'true'
 if ([string]::IsNullOrWhiteSpace($WorkRoot)) {
   if (![string]::IsNullOrWhiteSpace($env:GHOSIUM_SOURCE_WORK)) {
     $WorkRoot = $env:GHOSIUM_SOURCE_WORK
-  } elseif (![string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) {
-    $WorkRoot = Join-Path $env:RUNNER_TEMP 'ghosium-chromium'
   } else {
     $WorkRoot = 'C:\src\ghosium-chromium'
   }
@@ -162,11 +204,11 @@ if ($debuggerVersion -lt $minimumDebuggerVersion) {
 }
 
 $gitVersion = (& $git.Source --version | Select-Object -First 1).Trim()
-$os = Get-CimInstance Win32_OperatingSystem
 $report = [ordered]@{
-  schemaVersion = 1
+  schemaVersion = 2
   status = 'ready'
   architecture = 'windows-x64'
+  osArchitecture = $osArchitecture
   osCaption = [string]$os.Caption
   osVersion = [string]$os.Version
   ramGiB = $ramGiB
@@ -177,11 +219,15 @@ $report = [ordered]@{
   freeDiskGiB = $freeGiB
   requiredFreeDiskGiB = $requiredFreeGiB
   depotToolsRoot = $depotToolsRoot
+  depotToolsOrigin = $depotToolsOrigin
+  depotToolsRevision = $depotToolsRevision
+  depotToolsAutoUpdate = [string]$env:DEPOT_TOOLS_UPDATE
+  depotToolsWinToolchain = [string]$env:DEPOT_TOOLS_WIN_TOOLCHAIN
+  gitTerminalPrompt = [string]$env:GIT_TERMINAL_PROMPT
   gitVersion = $gitVersion
   visualStudioVersion = [string]$vsVersion
   windowsSdkVersion = $requiredWindowsSdk
   debuggingToolsVersion = $debuggerVersion.ToString()
-  depotToolsWinToolchain = [string]$env:DEPOT_TOOLS_WIN_TOOLCHAIN
 }
 
 if (![string]::IsNullOrWhiteSpace($ReportPath)) {
@@ -206,4 +252,4 @@ Write-Host "NTFS free disk: ${freeGiB} GiB"
 Write-Host "RAM: ${ramGiB} GiB; logical processors: $logicalProcessors"
 Write-Host "Visual Studio: $vsVersion"
 Write-Host "Windows SDK: $requiredWindowsSdk; Debugging Tools: $debuggerVersion"
-Write-Host "depot_tools: $depotToolsRoot"
+Write-Host "depot_tools: $depotToolsRoot @ $depotToolsRevision"

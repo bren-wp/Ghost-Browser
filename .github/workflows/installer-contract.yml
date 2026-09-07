@@ -42,6 +42,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           foreach ($path in @(
             'scripts/build-native-launcher.ps1',
+            'scripts/resolve-nsis.ps1',
             'scripts/smoke-test-windows-installer.ps1'
           )) {
             $tokens = $null
@@ -56,6 +57,29 @@ jobs:
               throw "PowerShell parser errors found in $path"
             }
           }
+
+      - name: Verify pinned NSIS bootstrap contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          resolver='scripts/resolve-nsis.ps1'
+          workflow='.github/workflows/windows-build.yml'
+
+          grep -Fq "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.12/nsis-3.12.zip" "$resolver"
+          grep -Fq "56581f90db321581c5381193d796fffcf2d24b2f8fed2160a6c6a3baa67f2c4f" "$resolver"
+          grep -Fq 'Get-FileHash $archive -Algorithm SHA256' "$resolver"
+          grep -Fq '& $Path /VERSION' "$resolver"
+          grep -Fq "'v3.12'" "$resolver"
+          grep -Fq './scripts/resolve-nsis.ps1' "$workflow"
+
+          if grep -Fqi 'choco install nsis' "$workflow"; then
+            echo 'Windows release workflow must not depend on the Chocolatey NSIS feed.' >&2
+            exit 1
+          fi
+          if grep -Fqi 'Algorithm SHA1' "$resolver"; then
+            echo 'NSIS bootstrap must use SHA-256 rather than SHA-1.' >&2
+            exit 1
+          fi
 
       - name: Require NSIS warnings as errors
         shell: bash
@@ -160,6 +184,7 @@ jobs:
           set -euo pipefail
           workflow='.github/workflows/windows-build.yml'
           grep -Fq './scripts/build-native-launcher.ps1' "$workflow"
+          grep -Fq './scripts/resolve-nsis.ps1' "$workflow"
           grep -Fq './scripts/smoke-test-windows-installer.ps1' "$workflow"
           grep -Fq 'Ghosium-Browser-Setup.exe' scripts/smoke-test-windows-installer.ps1
           grep -Fq "@('/S', '/UNINSTALL')" scripts/smoke-test-windows-installer.ps1

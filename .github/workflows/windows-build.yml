@@ -136,6 +136,7 @@ jobs:
             'launcher/ghosium.rc',
             'ghosium.ico',
             'scripts/build-native-launcher.ps1',
+            'scripts/resolve-nsis.ps1',
             'scripts/smoke-test-windows-installer.ps1',
             'extension/manifest.json',
             'extension/newtab.html',
@@ -341,22 +342,13 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
-          $makensis = Get-Command makensis.exe -ErrorAction SilentlyContinue
-          if (!$makensis) {
-            choco install nsis --yes --no-progress
-            if ($LASTEXITCODE -ne 0) {
-              throw 'NSIS installation failed'
-            }
-            $candidate = 'C:\Program Files (x86)\NSIS\makensis.exe'
-            if (!(Test-Path $candidate)) {
-              $candidate = 'C:\Program Files\NSIS\makensis.exe'
-            }
-            if (!(Test-Path $candidate)) {
-              throw 'NSIS installation did not provide makensis.exe'
-            }
-            $makensisPath = $candidate
-          } else {
-            $makensisPath = $makensis.Source
+          $resolverOutput = @(& ./scripts/resolve-nsis.ps1)
+          if ($LASTEXITCODE -ne 0 -or $resolverOutput.Count -eq 0) {
+            throw 'Verified NSIS resolver failed.'
+          }
+          $makensisPath = [string]$resolverOutput[-1]
+          if (!(Test-Path $makensisPath -PathType Leaf)) {
+            throw "Verified makensis.exe path is invalid: $makensisPath"
           }
 
           $stagePath = (Resolve-Path 'staging').Path

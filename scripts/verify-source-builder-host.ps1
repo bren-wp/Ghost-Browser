@@ -9,6 +9,16 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$depotToolsRevisionPath = Join-Path $repoRoot 'DEPOT_TOOLS_REVISION'
+if (!(Test-Path $depotToolsRevisionPath -PathType Leaf)) {
+  throw 'DEPOT_TOOLS_REVISION is missing from the Ghosium repository.'
+}
+$expectedDepotToolsRevision = (Get-Content $depotToolsRevisionPath -Raw).Trim()
+if ($expectedDepotToolsRevision -notmatch '^[0-9a-f]{40}$') {
+  throw "DEPOT_TOOLS_REVISION must contain one exact 40-character Git commit: '$expectedDepotToolsRevision'"
+}
+
 $requiredVisualStudioMajor = 18
 $requiredWindowsSdk = '10.0.28000.2270'
 $minimumDebuggerVersion = [version]'10.0.26100.3323'
@@ -105,6 +115,9 @@ if ($officialDepotToolsOrigins -notcontains $depotToolsOrigin) {
 $depotToolsRevision = (& $git.Source -C $depotToolsRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $depotToolsRevision -notmatch '^[0-9a-f]{40}$') {
   throw "Unable to determine an exact depot_tools Git revision: '$depotToolsRevision'"
+}
+if ($depotToolsRevision -ne $expectedDepotToolsRevision) {
+  throw "depot_tools revision mismatch. Ghosium requires $expectedDepotToolsRevision to match the pinned Chromium DEPS entry; found $depotToolsRevision"
 }
 $depotToolsChanges = @(& $git.Source -C $depotToolsRoot status --porcelain=v1 --untracked-files=no)
 if ($LASTEXITCODE -ne 0) {
@@ -223,7 +236,7 @@ if ($debuggerVersion -lt $minimumDebuggerVersion) {
 
 $gitVersion = (& $git.Source --version | Select-Object -First 1).Trim()
 $report = [ordered]@{
-  schemaVersion = 2
+  schemaVersion = 3
   status = 'ready'
   architecture = 'windows-x64'
   osArchitecture = $osArchitecture
@@ -239,6 +252,7 @@ $report = [ordered]@{
   requiredFreeDiskGiB = $requiredFreeGiB
   depotToolsRoot = $depotToolsRoot
   depotToolsOrigin = $depotToolsOrigin
+  expectedDepotToolsRevision = $expectedDepotToolsRevision
   depotToolsRevision = $depotToolsRevision
   depotToolsAutoUpdate = [string]$env:DEPOT_TOOLS_UPDATE
   depotToolsWinToolchain = [string]$env:DEPOT_TOOLS_WIN_TOOLCHAIN

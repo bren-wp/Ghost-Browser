@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.0
+
+### Windows release hardening
+- Hardened the NSIS bootstrap so release builds verify the exact installer toolchain instead of depending on a mutable package feed.
+- Kept real Windows install and same-Setup uninstall smoke testing as a mandatory release gate.
+- Added stronger verification around generated Setup and Portable executables and release artifact publication.
+
+### Full-source readiness
+- Added pinned Chromium source and Chromium-matched `depot_tools` provenance contracts.
+- Added fail-closed Windows x64 self-hosted builder readiness checks, persistent workspace validation and dependency reset hardening.
+- Added source branding, Windows identity, Ghosium Search, locale and product-link verification against the pinned Chromium source tree.
+- Added source-built runtime and installer round-trip verification tooling, SHA-256 provenance reports and post-merge engine audits on `main`.
+- The dedicated `Ghosium Full-Source Windows Build` remains a separate manual self-hosted gate; this stable release does not claim that the full Chromium source compile has completed.
+
+### CI and supply chain
+- Security-sensitive actions used by the self-hosted full-source workflow remain pinned to immutable commit SHAs.
+- Post-merge `main` changes affecting engine/source branding are now re-audited on the exact production branch SHA.
+- Existing release/package publication remains guarded against duplicate stable tags.
+
 ## 0.7.0
 
 ### Branding

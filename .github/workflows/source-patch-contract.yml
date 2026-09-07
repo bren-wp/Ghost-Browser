@@ -1,0 +1,129 @@
+name: Ghosium Source Patch Contract
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'ENGINE_SOURCE_REVISION'
+      - 'engine/branding/**'
+      - 'engine/build/windows-x64.args.gn'
+      - 'scripts/apply-engine-branding.ps1'
+      - 'scripts/rewrite-engine-product-links.ps1'
+      - 'scripts/rewrite-engine-default-search.ps1'
+      - 'scripts/rewrite-engine-windows-identity.ps1'
+      - 'scripts/rebrand-engine-locales.ps1'
+      - 'scripts/verify-engine-locales.ps1'
+      - 'scripts/verify-engine-fork.ps1'
+      - 'scripts/configure-engine-build.ps1'
+      - 'scripts/generate-engine-brand-assets.py'
+      - 'scripts/verify-pinned-source-anchors.py'
+      - '.github/workflows/source-patch-contract.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'ENGINE_SOURCE_REVISION'
+      - 'engine/branding/**'
+      - 'engine/build/windows-x64.args.gn'
+      - 'scripts/apply-engine-branding.ps1'
+      - 'scripts/rewrite-engine-product-links.ps1'
+      - 'scripts/rewrite-engine-default-search.ps1'
+      - 'scripts/rewrite-engine-windows-identity.ps1'
+      - 'scripts/rebrand-engine-locales.ps1'
+      - 'scripts/verify-engine-locales.ps1'
+      - 'scripts/verify-engine-fork.ps1'
+      - 'scripts/configure-engine-build.ps1'
+      - 'scripts/generate-engine-brand-assets.py'
+      - 'scripts/verify-pinned-source-anchors.py'
+      - '.github/workflows/source-patch-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-patch-contract:
+    name: Verify pinned Chromium patch compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Validate PowerShell patch tooling
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($path in @(
+            'scripts/apply-engine-branding.ps1',
+            'scripts/rewrite-engine-product-links.ps1',
+            'scripts/rewrite-engine-default-search.ps1',
+            'scripts/rewrite-engine-windows-identity.ps1',
+            'scripts/rebrand-engine-locales.ps1',
+            'scripts/verify-engine-locales.ps1',
+            'scripts/verify-engine-fork.ps1',
+            'scripts/configure-engine-build.ps1'
+          )) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path),
+              [ref]$tokens,
+              [ref]$errors
+            )
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              throw "PowerShell parser errors found in $path"
+            }
+          }
+
+      - name: Validate Python patch tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/generate-engine-brand-assets.py \
+            scripts/verify-pinned-source-anchors.py
+
+      - name: Verify deterministic Windows x64 GN contract
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          path = Path('engine/build/windows-x64.args.gn')
+          text = path.read_text(encoding='utf-8')
+          required = (
+              r'(?m)^\s*is_debug\s*=\s*false\s*$',
+              r'(?m)^\s*is_component_build\s*=\s*false\s*$',
+              r'(?m)^\s*is_official_build\s*=\s*false\s*$',
+              r'(?m)^\s*is_chrome_branded\s*=\s*false\s*$',
+              r'(?m)^\s*target_cpu\s*=\s*"x64"\s*$',
+              r'(?m)^\s*use_remoteexec\s*=\s*false\s*$',
+          )
+          forbidden = (
+              r'(?im)^\s*is_chrome_branded\s*=\s*true\s*$',
+              r'(?im)^\s*is_official_build\s*=\s*true\s*$',
+              r'(?im)^\s*use_remoteexec\s*=\s*true\s*$',
+              r'(?im)google_api_key\s*=',
+              r'(?im)google_default_client_id\s*=',
+              r'(?im)google_default_client_secret\s*=',
+          )
+          for pattern in required:
+              if not re.search(pattern, text):
+                  raise SystemExit(f'Missing required GN invariant: {pattern}')
+          for pattern in forbidden:
+              if re.search(pattern, text):
+                  raise SystemExit(f'Forbidden GN configuration detected: {pattern}')
+          print('Ghosium Windows x64 GN patch contract: OK')
+
+      - name: Verify pinned Chromium source patch anchors
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/verify-pinned-source-anchors.py

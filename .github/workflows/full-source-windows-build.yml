@@ -1,0 +1,161 @@
+name: Ghosium Full-Source Windows Build
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ghosium-full-source-windows
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-source:
+    name: Build pinned Ghosium engine from source
+    runs-on:
+      - self-hosted
+      - Windows
+      - X64
+      - ghosium-source-builder
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout Ghosium source tooling
+        uses: actions/checkout@v5
+
+      - name: Validate source builder
+        id: builder
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
+            throw 'Ghosium full-source Windows builds require a Windows builder.'
+          }
+
+          foreach ($command in @('git', 'fetch', 'gclient', 'gn', 'autoninja')) {
+            if (!(Get-Command $command -ErrorAction SilentlyContinue)) {
+              throw "Required Chromium build command is missing from PATH: $command"
+            }
+          }
+
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (!(Test-Path $vswhere -PathType Leaf)) {
+            throw 'Visual Studio Installer vswhere.exe was not found.'
+          }
+          $vsVersion = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Workload.NativeDesktop -property installationVersion | Select-Object -First 1)
+          if (!$vsVersion) {
+            throw 'Visual Studio with Desktop development with C++ was not found.'
+          }
+          $major = [int]($vsVersion.Split('.')[0])
+          if ($major -lt 18) {
+            throw "Pinned Chromium requires Visual Studio 2026 (18.x or newer); found $vsVersion"
+          }
+
+          $workRoot = if ($env:GHOSIUM_SOURCE_WORK) {
+            [IO.Path]::GetFullPath($env:GHOSIUM_SOURCE_WORK)
+          } else {
+            [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP 'ghosium-chromium'))
+          }
+
+          $driveName = ([IO.Path]::GetPathRoot($workRoot)).TrimEnd('\').TrimEnd(':')
+          $drive = Get-PSDrive -Name $driveName
+          $reuse = Test-Path (Join-Path $workRoot 'src/.git')
+          $requiredFreeGiB = if ($reuse) { 40 } else { 110 }
+          $freeGiB = [math]::Floor($drive.Free / 1GB)
+          if ($freeGiB -lt $requiredFreeGiB) {
+            throw "Insufficient free disk for Chromium source build. Required at least ${requiredFreeGiB} GiB; found ${freeGiB} GiB on $($drive.Root)"
+          }
+
+          "work_root=$workRoot" >> $env:GITHUB_OUTPUT
+          "reuse=$($reuse.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          Write-Host "Source work root: $workRoot"
+          Write-Host "Reusable checkout: $reuse"
+          Write-Host "Visual Studio: $vsVersion"
+          Write-Host "Free disk: ${freeGiB} GiB"
+
+      - name: Bootstrap pinned Chromium source
+        shell: pwsh
+        env:
+          WORK_ROOT: ${{ steps.builder.outputs.work_root }}
+          REUSE_CHECKOUT: ${{ steps.builder.outputs.reuse }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $params = @{
+            Destination = $env:WORK_ROOT
+          }
+          if ($env:REUSE_CHECKOUT -eq 'true') {
+            $params.ReuseExisting = $true
+          }
+          ./scripts/bootstrap-engine-source.ps1 @params
+
+      - name: Apply Ghosium source branding
+        shell: pwsh
+        env:
+          WORK_ROOT: ${{ steps.builder.outputs.work_root }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = Join-Path $env:WORK_ROOT 'src'
+          ./scripts/apply-engine-branding.ps1 -SourceRoot $src
+          ./scripts/verify-engine-fork.ps1 -SourceRoot $src
+
+      - name: Configure deterministic Windows x64 build
+        shell: pwsh
+        env:
+          WORK_ROOT: ${{ steps.builder.outputs.work_root }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = Join-Path $env:WORK_ROOT 'src'
+          ./scripts/configure-engine-build.ps1 -SourceRoot $src -OutDir 'out/Ghosium'
+
+      - name: Compile Ghosium Browser and mini installer
+        shell: pwsh
+        env:
+          WORK_ROOT: ${{ steps.builder.outputs.work_root }}
+          NINJA_SUMMARIZE_BUILD: '1'
+          DEPOT_TOOLS_WIN_TOOLCHAIN: '0'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = Join-Path $env:WORK_ROOT 'src'
+          Push-Location $src
+          try {
+            autoninja -C out/Ghosium chrome mini_installer
+            if ($LASTEXITCODE -ne 0) {
+              throw "Chromium source compile failed with exit code $LASTEXITCODE"
+            }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Verify branded source-built binaries
+        shell: pwsh
+        env:
+          WORK_ROOT: ${{ steps.builder.outputs.work_root }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = Join-Path $env:WORK_ROOT 'src'
+          New-Item -ItemType Directory -Force -Path artifacts/full-source | Out-Null
+          ./scripts/verify-engine-build-output.ps1 `
+            -SourceRoot $src `
+            -OutDir 'out/Ghosium' `
+            -ProvenancePath (Join-Path $PWD 'artifacts/full-source/GHOSIUM-SOURCE-BUILD.json')
+
+          $out = Join-Path $src 'out/Ghosium'
+          Copy-Item (Join-Path $out 'mini_installer.exe') 'artifacts/full-source/Ghosium-Browser-Source-Setup.exe' -Force
+          Copy-Item (Join-Path $out 'chrome.7z') 'artifacts/full-source/Ghosium-Browser-Source-Runtime.7z' -Force
+
+          Get-FileHash 'artifacts/full-source/Ghosium-Browser-Source-Setup.exe' -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLowerInvariant())  Ghosium-Browser-Source-Setup.exe" } |
+            Set-Content 'artifacts/full-source/SHA256SUMS.txt' -Encoding ascii
+          Get-FileHash 'artifacts/full-source/Ghosium-Browser-Source-Runtime.7z' -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLowerInvariant())  Ghosium-Browser-Source-Runtime.7z" } |
+            Add-Content 'artifacts/full-source/SHA256SUMS.txt' -Encoding ascii
+
+      - name: Upload verified full-source build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghosium-full-source-windows-x64
+          path: artifacts/full-source/
+          if-no-files-found: error
+          retention-days: 14

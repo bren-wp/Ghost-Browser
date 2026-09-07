@@ -1,0 +1,257 @@
+name: Ghosium Full-Source Engine Audit
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'ENGINE_REVISION'
+      - 'ENGINE_SOURCE_REVISION'
+      - 'engine/**'
+      - 'scripts/*engine*.ps1'
+      - 'scripts/generate-engine-brand-assets.py'
+      - '.github/workflows/engine-source-audit.yml'
+      - '.github/workflows/full-source-windows-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    name: Verify pinned source and Ghosium invariants
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Validate PowerShell scripts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($path in @(
+            'scripts/bootstrap-engine-source.ps1',
+            'scripts/apply-engine-branding.ps1',
+            'scripts/rebrand-engine-locales.ps1',
+            'scripts/rewrite-engine-product-links.ps1',
+            'scripts/rewrite-engine-default-search.ps1',
+            'scripts/rewrite-engine-windows-identity.ps1',
+            'scripts/verify-engine-locales.ps1',
+            'scripts/verify-engine-fork.ps1',
+            'scripts/configure-engine-build.ps1',
+            'scripts/verify-engine-build-output.ps1'
+          )) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path),
+              [ref]$tokens,
+              [ref]$errors
+            )
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              throw "PowerShell parser errors found in $path"
+            }
+          }
+
+      - name: Validate Windows source-build contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $argsPath = 'engine/build/windows-x64.args.gn'
+          if (!(Test-Path $argsPath -PathType Leaf)) {
+            throw "Missing deterministic Windows GN args: $argsPath"
+          }
+          $args = Get-Content $argsPath -Raw
+          foreach ($required in @(
+            'is_debug = false',
+            'is_component_build = false',
+            'is_official_build = false',
+            'is_chrome_branded = false',
+            'target_cpu = "x64"',
+            'use_remoteexec = false'
+          )) {
+            if (!$args.Contains($required)) {
+              throw "Windows source-build args are missing required invariant: $required"
+            }
+          }
+          foreach ($forbidden in @(
+            '(?im)^\s*is_chrome_branded\s*=\s*true\s*$',
+            '(?im)^\s*is_official_build\s*=\s*true\s*$',
+            '(?im)^\s*use_remoteexec\s*=\s*true\s*$',
+            '(?im)^\s*google_api_key\s*=',
+            '(?im)^\s*google_default_client_id\s*=',
+            '(?im)^\s*google_default_client_secret\s*='
+          )) {
+            if ($args -match $forbidden) {
+              throw "Windows source-build args contain forbidden active configuration: $forbidden"
+            }
+          }
+
+          $workflow = Get-Content '.github/workflows/full-source-windows-build.yml' -Raw
+          foreach ($requiredWorkflowText in @(
+            'workflow_dispatch:',
+            'ghosium-source-builder',
+            'bootstrap-engine-source.ps1',
+            'apply-engine-branding.ps1',
+            'configure-engine-build.ps1',
+            'autoninja -C out/Ghosium chrome mini_installer',
+            'verify-engine-build-output.ps1'
+          )) {
+            if (!$workflow.Contains($requiredWorkflowText)) {
+              throw "Full-source Windows workflow is missing required stage: $requiredWorkflowText"
+            }
+          }
+          if ($workflow -match '(?m)^\s*pull_request\s*:') {
+            throw 'Heavy full-source Windows build must remain manual/self-hosted and must not run on every PR.'
+          }
+          if ($workflow -match '(?i)uninstall\.exe|ghosium(?:-browser)?-uninstall\.exe') {
+            throw 'Full-source workflow must not build, copy, upload or release a standalone uninstall executable.'
+          }
+
+      - name: Validate deterministic brand asset generator
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/generate-engine-brand-assets.py
+          asset_root="${RUNNER_TEMP}/ghosium-brand-assets"
+          python3 scripts/generate-engine-brand-assets.py "$asset_root"
+          python3 - "$asset_root" <<'PY'
+          from pathlib import Path
+          import sys
+
+          root = Path(sys.argv[1])
+          png = root / 'chrome/app/theme/default_100_percent/chromium/product_logo_32.png'
+          ico = root / 'chrome/app/theme/chromium/win/chromium.ico'
+          assert png.read_bytes().startswith(b'\x89PNG\r\n\x1a\n')
+          assert ico.read_bytes().startswith(b'\x00\x00\x01\x00')
+          assert png.stat().st_size > 100
+          assert ico.stat().st_size > 1000
+          PY
+
+      - name: Verify Ghosium source contract
+        shell: pwsh
+        run: ./scripts/verify-engine-fork.ps1
+
+      - name: Verify snapshot-to-source provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          snapshot_revision="$(tr -d '\r\n ' < ENGINE_REVISION)"
+          source_revision="$(tr -d '\r\n ' < ENGINE_SOURCE_REVISION)"
+          effective_url="$(curl --fail --silent --show-error --location --retry 4 --retry-all-errors --output /dev/null --write-out '%{url_effective}' "https://crrev.com/${snapshot_revision}")"
+          case "$effective_url" in
+            *"/${source_revision}"*|*"/+/${source_revision}"*)
+              echo "Snapshot ${snapshot_revision} resolves to pinned source ${source_revision}."
+              ;;
+            *)
+              echo "Snapshot/source mismatch: ${snapshot_revision} -> ${effective_url}; expected ${source_revision}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Audit product URL allowlist
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $config = Get-Content 'engine/branding/product.json' -Raw | ConvertFrom-Json
+          $approved = @($config.allowedProductUrls)
+          $jsonText = Get-Content 'engine/branding/product.json' -Raw
+          $urls = [regex]::Matches($jsonText, 'https://[^"\s]+') | ForEach-Object Value | Sort-Object -Unique
+          foreach ($url in $urls) {
+            if ($approved -notcontains $url) {
+              throw "Unapproved Ghosium product URL found in branding contract: $url"
+            }
+          }
+
+  pinned-source-smoke:
+    name: Apply branding to pinned Chromium source
+    needs: source-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout Ghosium fork tooling
+        uses: actions/checkout@v5
+
+      - name: Sparse checkout pinned Chromium source
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="${RUNNER_TEMP}/chromium-src"
+          revision="$(tr -d '\r\n ' < ENGINE_SOURCE_REVISION)"
+
+          git init "$src"
+          git -C "$src" remote add origin https://github.com/chromium/chromium.git
+          git -C "$src" config core.sparseCheckout true
+          mkdir -p "$src/.git/info"
+          cat > "$src/.git/info/sparse-checkout" <<'EOF'
+          /chrome/app/chromium_strings.grd
+          /chrome/app/settings_chromium_strings.grdp
+          /chrome/app/resources/
+          /chrome/app/theme/chromium/
+          /chrome/common/url_constants.h
+          /chrome/install_static/chromium_install_modes.h
+          /chrome/installer/setup/setup_main.cc
+          /chrome/installer/setup/uninstall.cc
+          /chrome/installer/setup/install_worker.cc
+          /chrome/installer/util/util_constants.h
+          /chrome/browser/ui/chrome_pages.cc
+          /chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome_page_handler.cc
+          /chrome/browser/ui/webui/extensions/extensions_ui.cc
+          /chrome/browser/resources/settings/about_page/about_page.ts
+          /chrome/browser/resources/signin/managed_user_profile_notice/managed_user_profile_notice_value_prop.html.ts
+          /chrome/browser/resources/contextual_tasks/top_toolbar_logo.html.ts
+          /components/components_chromium_strings.grd
+          /components/search_engines/template_url_prepopulate_data.cc
+          /components/strings/
+          /components/vector_icons/chromium/
+          /extensions/strings/
+          /ui/webui/resources/images/chrome_logo_dark.svg
+          EOF
+
+          git -C "$src" fetch --depth=1 --filter=blob:none origin "$revision"
+          git -C "$src" checkout --detach FETCH_HEAD
+          test "$(git -C "$src" rev-parse HEAD)" = "$revision"
+          echo "CHROMIUM_SRC=$src" >> "$GITHUB_ENV"
+
+      - name: Apply complete Ghosium source branding
+        shell: pwsh
+        run: ./scripts/apply-engine-branding.ps1 -SourceRoot $env:CHROMIUM_SRC
+
+      - name: Validate resulting source diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C "$CHROMIUM_SRC" diff --check
+          grep -F 'Customize Ghosium' "$CHROMIUM_SRC/chrome/app/chromium_strings.grd"
+          grep -F 'alt="Ghosium logo"' "$CHROMIUM_SRC/chrome/browser/resources/signin/managed_user_profile_notice/managed_user_profile_notice_value_prop.html.ts"
+          test "$(grep -Fc 'chrome://theme/current-channel-logo@2x' "$CHROMIUM_SRC/chrome/browser/resources/contextual_tasks/top_toolbar_logo.html.ts")" -ge 2
+          grep -F 'aria-label="Ghosium"' "$CHROMIUM_SRC/ui/webui/resources/images/chrome_logo_dark.svg"
+          grep -F 'Ghosium Search' "$CHROMIUM_SRC/components/search_engines/template_url_prepopulate_data.cc"
+          grep -F 'https://search.ghosium.com/?q={searchTerms}' "$CHROMIUM_SRC/components/search_engines/template_url_prepopulate_data.cc"
+          grep -F 'prepopulate_id = 1101' "$CHROMIUM_SRC/components/search_engines/template_url_prepopulate_data.cc"
+          grep -F 'kCompanyPathName[] = L"Brendigo"' "$CHROMIUM_SRC/chrome/install_static/chromium_install_modes.h"
+          grep -F 'kProductPathName[] = L"Ghosium"' "$CHROMIUM_SRC/chrome/install_static/chromium_install_modes.h"
+          grep -F '.base_app_name = L"Ghosium Browser"' "$CHROMIUM_SRC/chrome/install_static/chromium_install_modes.h"
+          grep -F '.browser_prog_id_prefix = L"GhosiumHTM"' "$CHROMIUM_SRC/chrome/install_static/chromium_install_modes.h"
+          grep -F '.direct_launch_url_scheme = "ghosium"' "$CHROMIUM_SRC/chrome/install_static/chromium_install_modes.h"
+
+          # Ghosium is uninstallable through the normal installed setup.exe flow.
+          # No separate uninstall.exe is introduced or expected.
+          grep -F 'kSetupExe[] = L"setup.exe"' "$CHROMIUM_SRC/chrome/installer/util/util_constants.h"
+          grep -F 'kUninstallStringField[] = L"UninstallString"' "$CHROMIUM_SRC/chrome/installer/util/util_constants.h"
+          grep -F 'kUninstallArgumentsField[] = L"UninstallArguments"' "$CHROMIUM_SRC/chrome/installer/util/util_constants.h"
+          grep -F 'HasSwitch(installer::switches::kUninstall)' "$CHROMIUM_SRC/chrome/installer/setup/setup_main.cc"
+          grep -F 'UninstallProduct(' "$CHROMIUM_SRC/chrome/installer/setup/setup_main.cc"
+          grep -F 'InstallStatus UninstallProduct(' "$CHROMIUM_SRC/chrome/installer/setup/uninstall.cc"
+          grep -F 'installer::kUninstallStringField' "$CHROMIUM_SRC/chrome/installer/setup/install_worker.cc"
+          grep -F 'installer::kUninstallArgumentsField' "$CHROMIUM_SRC/chrome/installer/setup/install_worker.cc"
+
+          if git -C "$CHROMIUM_SRC" status --porcelain=v1 -- third_party | grep -q .; then
+            echo "third_party was modified" >&2
+            exit 1
+          fi
+          git -C "$CHROMIUM_SRC" status --short

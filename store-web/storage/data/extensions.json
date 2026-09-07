@@ -1,20 +1,42 @@
-[
-  {
-    "id": "ghosium-privacy",
-    "name": "Ghosium Privacy",
-    "version": "0.7.0",
-    "status": "built_in",
-    "description": "Built-in declarative tracker protection and Ghosium new-tab experience.",
-    "publisher": "Brendigo",
-    "homepage": "https://ghosium.com/security"
-  },
-  {
-    "id": "ghosium-search",
-    "name": "Ghosium Search",
-    "version": "0.7.0",
-    "status": "built_in",
-    "description": "Built-in Ghosium Search integration for the browser search experience.",
-    "publisher": "Brendigo",
-    "homepage": "https://search.ghosium.com/"
-  }
-]
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-09-07T00:00:00Z",
+  "extensions": [
+    {
+      "id": "ghosium-privacy",
+      "name": "Ghosium Privacy",
+      "version": "0.7.0",
+      "manifestVersion": 3,
+      "status": "built_in",
+      "description": "Built-in declarative tracker protection and Ghosium new-tab experience.",
+      "publisher": "Brendigo",
+      "homepage": "https://ghosium.com/security",
+      "permissions": [
+        "declarativeNetRequest"
+      ],
+      "hostPermissions": [
+        "<all_urls>"
+      ],
+      "distribution": {
+        "type": "bundled",
+        "package": null
+      }
+    },
+    {
+      "id": "ghosium-search",
+      "name": "Ghosium Search",
+      "version": "0.7.0",
+      "manifestVersion": 3,
+      "status": "built_in",
+      "description": "Built-in Ghosium Search integration for the browser search experience.",
+      "publisher": "Brendigo",
+      "homepage": "https://search.ghosium.com/",
+      "permissions": [],
+      "hostPermissions": [],
+      "distribution": {
+        "type": "bundled",
+        "package": null
+      }
+    }
+  ]
+}

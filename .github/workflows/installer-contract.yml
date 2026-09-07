@@ -1,0 +1,178 @@
+name: Ghosium Windows Installer Contract
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'launcher/ghosium.rc'
+      - 'installer/**'
+      - 'scripts/**'
+      - '.github/workflows/windows-build.yml'
+      - '.github/workflows/full-source-windows-build.yml'
+      - '.github/workflows/installer-contract.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'launcher/ghosium.rc'
+      - 'installer/**'
+      - 'scripts/**'
+      - '.github/workflows/windows-build.yml'
+      - '.github/workflows/full-source-windows-build.yml'
+      - '.github/workflows/installer-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installer-contract:
+    name: Verify install and uninstall architecture
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Validate installer PowerShell scripts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($path in @(
+            'scripts/build-native-launcher.ps1',
+            'scripts/smoke-test-windows-installer.ps1'
+          )) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path),
+              [ref]$tokens,
+              [ref]$errors
+            )
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              throw "PowerShell parser errors found in $path"
+            }
+          }
+
+      - name: Require NSIS warnings as errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in installer/ghosium.nsi installer/portable.nsi; do
+            count="$(grep -Fc '!pragma warning error all' "$script")"
+            if [ "$count" -ne 1 ]; then
+              echo "$script must contain exactly one '!pragma warning error all' directive." >&2
+              exit 1
+            fi
+          done
+
+      - name: Verify deterministic RC-compatible Ghosium Windows icon
+        shell: bash
+        run: |
+          set -euo pipefail
+          icon="${RUNNER_TEMP}/ghosium.ico"
+          python3 scripts/generate-engine-brand-assets.py --icon-output "$icon" --icon-only
+          python3 - "$icon" <<'PY'
+          from pathlib import Path
+          import struct
+          import sys
+
+          data = Path(sys.argv[1]).read_bytes()
+          assert data[:4] == b'\x00\x00\x01\x00', 'invalid ICO signature'
+          count = struct.unpack_from('<H', data, 4)[0]
+          assert count >= 4, f'expected multi-resolution ICO, found {count} frame(s)'
+          first_offset = struct.unpack_from('<I', data, 18)[0]
+          assert first_offset + 40 <= len(data), 'invalid first-frame offset'
+          assert struct.unpack_from('<I', data, first_offset)[0] == 40, 'first frame is not BITMAPINFOHEADER DIB'
+          PY
+          grep -Fq '101 ICON "ghosium.ico"' launcher/ghosium.rc
+          grep -Fq '!define MUI_ICON "${GHOSIUM_ICON}"' installer/ghosium.nsi
+          grep -Fq 'Icon "${GHOSIUM_ICON}"' installer/portable.nsi
+          if grep -Fq 'modern-install.ico' installer/ghosium.nsi; then
+            echo 'Setup must not use the generic NSIS icon.' >&2
+            exit 1
+          fi
+
+      - name: Reject standalone uninstall executables
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if find . -type f \( -iname 'uninstall.exe' -o -iname 'ghosium-uninstall.exe' -o -iname 'ghosium-browser-uninstall.exe' \) -print -quit | grep -q .; then
+            echo 'A standalone uninstall executable is forbidden.' >&2
+            exit 1
+          fi
+
+          active_nsi="$(sed 's/[[:space:]]*;.*$//' installer/ghosium.nsi)"
+          if printf '%s\n' "$active_nsi" | grep -nE 'WriteUninstaller|MUI_UNPAGE_|Section[[:space:]]+"Uninstall"|Uninstall\.exe'; then
+            echo 'installer/ghosium.nsi must use the setup executable for uninstall instead of generating a standalone uninstaller.' >&2
+            exit 1
+          fi
+          if printf '%s\n' "$active_nsi" | grep -nEi 'cmd\.exe|powershell(\.exe)?'; then
+            echo 'Uninstall cleanup must not depend on cmd.exe or PowerShell shell command strings.' >&2
+            exit 1
+          fi
+
+      - name: Verify same-setup uninstall registration and delete guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          text = Path('installer/ghosium.nsi').read_text(encoding='utf-8')
+          required = [
+              r'!define INSTALLED_SETUP "Installer\Ghosium-Browser-Setup.exe"'.replace(r'\"', '"'),
+              r'!define INSTALL_MARKER "ghosium-install.marker"'.replace(r'\"', '"'),
+              r'!define CLEANUP_SETUP "$TEMP\Brendigo\Ghosium Browser Cleanup\Ghosium-Browser-Setup.exe"'.replace(r'\"', '"'),
+              '${GetOptions} $R0 "/UNINSTALL" $R1',
+              '${GetOptions} $R0 "/CLEANUP" $R1',
+              r'CopyFiles /SILENT "$EXEPATH" "$INSTDIR\${INSTALLED_SETUP}"'.replace(r'\"', '"'),
+              r'CopyFiles /SILENT "$EXEPATH" "${CLEANUP_SETUP}"'.replace(r'\"', '"'),
+              "Exec '\"${CLEANUP_SETUP}\" /CLEANUP'",
+              "Exec '\"${CLEANUP_SETUP}\" /S /CLEANUP'",
+              r'IfFileExists "$INSTDIR\${INSTALL_MARKER}" 0 unsafe_install_location'.replace(r'\"', '"'),
+              r'IfFileExists "$INSTDIR\${INSTALLED_SETUP}" 0 unsafe_install_location'.replace(r'\"', '"'),
+              'install_location_verified unsafe_install_location',
+              r'RMDir /r /REBOOTOK "$INSTDIR"'.replace(r'\"', '"'),
+              r'Delete /REBOOTOK "$EXEPATH"'.replace(r'\"', '"'),
+              '"UninstallString"',
+              '"QuietUninstallString"',
+              '/UNINSTALL',
+              '/S /UNINSTALL',
+              'SetErrorLevel 0',
+          ]
+          missing = [needle for needle in required if needle not in text]
+          if missing:
+              raise SystemExit('Missing same-Setup uninstall invariant(s):\n' + '\n'.join(missing))
+          if '/UNINSTALL /S' in text:
+              raise SystemExit('Silent uninstall switches are in the unsafe NSIS order; /S must precede /UNINSTALL')
+          if '/CLEANUP /S' in text:
+              raise SystemExit('Silent cleanup switches are in the unsafe NSIS order; /S must precede /CLEANUP')
+          PY
+
+      - name: Verify Windows release performs real installer smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow='.github/workflows/windows-build.yml'
+          grep -Fq './scripts/build-native-launcher.ps1' "$workflow"
+          grep -Fq './scripts/smoke-test-windows-installer.ps1' "$workflow"
+          grep -Fq 'Ghosium-Browser-Setup.exe' scripts/smoke-test-windows-installer.ps1
+          grep -Fq "@('/S', '/UNINSTALL')" scripts/smoke-test-windows-installer.ps1
+          grep -Fq 'UninstallString' scripts/smoke-test-windows-installer.ps1
+
+      - name: Verify full-source uninstall contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'setup.exe --uninstall' scripts/verify-engine-build-output.ps1
+          grep -Fq 'standaloneExecutable = $false' scripts/verify-engine-build-output.ps1
+
+          if grep -Ei 'copy-item.*uninstall\.exe|upload.*uninstall\.exe|ghosium-(browser-)?uninstall\.exe' .github/workflows/full-source-windows-build.yml; then
+            echo 'Full-source workflow must not package a standalone uninstaller.' >&2
+            exit 1
+          fi

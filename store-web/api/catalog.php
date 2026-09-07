@@ -1,24 +1,15 @@
 <?php
 declare(strict_types=1);
 
-header('Content-Type: application/json; charset=UTF-8');
-header('Cache-Control: public, max-age=300');
-header('Referrer-Policy: no-referrer');
-header('X-Content-Type-Options: nosniff');
+require_once dirname(__DIR__) . '/lib/store.php';
+
 header('Access-Control-Allow-Origin: https://store.ghosium.com');
+header('Vary: Origin');
 
-$file = dirname(__DIR__) . '/storage/data/extensions.json';
-if (!is_file($file)) {
-    http_response_code(503);
-    echo json_encode(['extensions' => []], JSON_UNESCAPED_SLASHES);
-    exit;
+try {
+    $catalog = store_load_catalog(false);
+    $revocations = store_load_revocations();
+    store_json_response(store_public_catalog($catalog, $revocations));
+} catch (Throwable) {
+    store_public_error();
 }
-
-$data = json_decode((string)file_get_contents($file), true);
-if (!is_array($data)) {
-    http_response_code(500);
-    echo json_encode(['extensions' => []], JSON_UNESCAPED_SLASHES);
-    exit;
-}
-
-echo json_encode(['extensions' => $data], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);

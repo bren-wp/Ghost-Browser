@@ -1,6 +1,7 @@
 Unicode true
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
+!pragma warning error all
 
 !ifndef GHOSIUM_VERSION
   !define GHOSIUM_VERSION "0.0.0"
@@ -11,12 +12,17 @@ Unicode true
 !ifndef GHOSIUM_ARTIFACTS
   !error "GHOSIUM_ARTIFACTS must point to the release artifact directory"
 !endif
+!ifndef GHOSIUM_ICON
+  !define GHOSIUM_ICON "${__FILEDIR__}\..\ghosium.ico"
+!endif
 
 Name "Ghosium Browser Portable ${GHOSIUM_VERSION}"
 OutFile "${GHOSIUM_ARTIFACTS}\Ghosium-Browser-Portable.exe"
+Icon "${GHOSIUM_ICON}"
 RequestExecutionLevel user
 SilentInstall silent
 SetCompressor zlib
+BrandingText "Ghosium Browser · Brendigo"
 
 VIProductVersion "${GHOSIUM_VERSION}.0"
 VIAddVersionKey /LANG=1033 "ProductName" "Ghosium Browser Portable"
@@ -25,6 +31,11 @@ VIAddVersionKey /LANG=1033 "FileDescription" "Ghosium Browser Portable"
 VIAddVersionKey /LANG=1033 "FileVersion" "${GHOSIUM_VERSION}"
 VIAddVersionKey /LANG=1033 "ProductVersion" "${GHOSIUM_VERSION}"
 VIAddVersionKey /LANG=1033 "LegalCopyright" "Copyright (c) 2026 Brendigo"
+
+; MUI language tables must follow at least one MUI page declaration. Portable
+; remains SilentInstall=silent, so this page is never shown; it only gives MUI
+; the correct compile-time ordering and keeps makensis warning-free.
+!insertmacro MUI_PAGE_INSTFILES
 
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "Croatian"

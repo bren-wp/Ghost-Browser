@@ -17,6 +17,8 @@ Use GitHub repository **Settings → Actions → Runners → New self-hosted run
 
 Install the runner as a Windows service so the builder remains available for long builds. The service account must have read/write access to the source workspace and enough free disk space.
 
+The source-built installer smoke is deliberately a per-user installation under the runner service account. Keep that account dedicated to Ghosium builds: the smoke test refuses to run if an existing Ghosium installation or Ghosium user-data directory is already present, so it cannot silently overwrite a real browser profile.
+
 ## Pinned Chromium host requirements
 
 Ghosium pins Chromium source commit `fac978ddceaae0358a2bd69e20a5156ec8dc86ab`. Its Windows build instructions require:
@@ -152,6 +154,8 @@ The script fails closed if required architecture, compiler, SDK, filesystem, dis
 
 The report includes the expected and actual depot_tools Git revisions, official origin URL, Windows/Visual Studio/SDK versions, architecture, RAM, CPU count, workspace state, filesystem, free disk and chosen source workspace.
 
+Before downloading or reusing the full Chromium tree, the workflow also runs `scripts/verify-pinned-source-anchors.py`. That lightweight contract reads the exact files from the pinned Chromium revision and fails if a Ghosium branding, Search, product-link, Windows identity, uninstall, icon, or locale patch anchor no longer matches the reviewed upstream source layout.
+
 ## Running the full-source build
 
 Once the runner appears **Online** in GitHub with the `ghosium-source-builder` label:
@@ -164,16 +168,22 @@ Once the runner appears **Online** in GitHub with the `ghosium-source-builder` l
 A successful workflow must complete these stages:
 
 1. builder preflight and exact toolchain provenance capture;
-2. pinned Chromium source bootstrap;
-3. Ghosium source branding and verification;
-4. deterministic Windows x64 GN configuration;
-5. `autoninja -C out/Ghosium chrome mini_installer`;
-6. source-built binary metadata verification;
-7. real headless runtime smoke using the newly compiled `chrome.exe`, without `--no-sandbox`;
-8. SHA-256/provenance generation;
-9. upload of the verified `ghosium-full-source-windows-x64` artifact.
+2. pinned Chromium patch-anchor compatibility verification;
+3. pinned Chromium source bootstrap;
+4. Ghosium source branding and verification;
+5. deterministic Windows x64 GN configuration;
+6. `autoninja -C out/Ghosium chrome mini_installer`;
+7. source-built binary metadata verification;
+8. real headless runtime smoke using the newly compiled build-tree `chrome.exe`, without `--no-sandbox`;
+9. real source-built installer round trip: `mini_installer.exe` per-user install, installed-layout headless runtime smoke, registered `setup.exe --uninstall --force-uninstall --delete-profile`, and cleanup verification;
+10. SHA-256/provenance generation;
+11. upload of the verified `ghosium-full-source-windows-x64` artifact.
 
-The runtime smoke launches the source-built browser with an isolated temporary profile, loads a local `data:` document, checks a deterministic DOM marker, and fails the build if the executable crashes, exits non-zero, does not return the expected result, or runs longer than 60 seconds. The smoke test does not disable the browser sandbox.
+The first runtime smoke launches the source-built browser from the build tree with an isolated temporary profile, loads a local `data:` document, checks a deterministic DOM marker, and fails the build if the executable crashes, exits non-zero, does not return the expected result, or runs longer than 60 seconds. The smoke test does not disable the browser sandbox.
+
+The source-built installer smoke then validates the distribution path rather than only loose build outputs. It refuses to overwrite any existing Ghosium installation or default user profile, installs with `--do-not-launch-chrome`, verifies `Ghosium Browser` / `Brendigo` version metadata and the Windows uninstall registration, launches the installed browser headlessly with an isolated profile, and finally invokes the installed `setup.exe` with `--uninstall --force-uninstall --delete-profile`. The workflow fails unless the application directory, uninstall registration, and default Ghosium user-data directory are absent afterward.
+
+A successful installer round trip writes `GHOSIUM-SOURCE-INSTALLER-SMOKE.json`. The report records the mini-installer SHA-256, installed engine version, runtime result, setup-based uninstall result, cleanup result, repository commit, and verification timestamp. `SHA256SUMS.txt` covers this report together with `GHOSIUM-SOURCE-BUILD.json`, `GHOSIUM-BUILDER-READY.json`, the source-built Setup executable, and the runtime archive.
 
 The first full-source build is not considered complete merely because the workflow is configured. Completion requires an actual successful Actions run and verified produced artifacts.
 
@@ -184,7 +194,7 @@ The first full-source build is not considered complete merely because the workfl
 - `DEPOT_TOOLS_REVISION` is matched by CI against the pinned Chromium DEPS file; do not change it independently without updating the Chromium source pin or proving the new pairing.
 - `DEPOT_TOOLS_UPDATE=0` prevents a `gclient` invocation from silently changing depot_tools during a build.
 - `GIT_TERMINAL_PROMPT=0` prevents unattended jobs from hanging on interactive authentication prompts.
-- Keep the builder dedicated to trusted repository workflows where practical.
+- Keep the builder dedicated to trusted repository workflows where practical. In particular, do not keep a real end-user Ghosium profile under the runner service account because the source-built installer gate is intentionally destructive only for its own clean test installation.
 - Keep Visual Studio, Windows SDK security fixes, Git and the runner application patched while preserving the pinned source/tool requirements.
 - Do not disable Chromium sandboxing, certificate validation, process isolation, extension signature verification, or update signature verification to make a build pass.
 - `third_party/` source attribution and licenses must remain intact.

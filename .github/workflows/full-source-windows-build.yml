@@ -40,6 +40,15 @@ jobs:
           ./scripts/verify-source-builder-host.ps1 `
             -ReportPath 'artifacts/full-source/GHOSIUM-BUILDER-READY.json'
 
+      - name: Verify pinned Chromium patch anchors
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python3 ./scripts/verify-pinned-source-anchors.py
+          if ($LASTEXITCODE -ne 0) {
+            throw "Pinned Chromium source patch-anchor validation failed with exit code $LASTEXITCODE"
+          }
+
       - name: Bootstrap pinned Chromium source
         shell: pwsh
         env:
@@ -109,15 +118,31 @@ jobs:
           Copy-Item (Join-Path $out 'mini_installer.exe') 'artifacts/full-source/Ghosium-Browser-Source-Setup.exe' -Force
           Copy-Item (Join-Path $out 'chrome.7z') 'artifacts/full-source/Ghosium-Browser-Source-Runtime.7z' -Force
 
+      - name: Smoke test source-built install and setup-based uninstall
+        shell: pwsh
+        env:
+          WORK_ROOT: ${{ steps.builder.outputs.work_root }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = Join-Path $env:WORK_ROOT 'src'
+          ./scripts/smoke-test-source-windows-installer.ps1 `
+            -MiniInstallerPath (Join-Path $src 'out/Ghosium/mini_installer.exe') `
+            -ReportPath (Join-Path $PWD 'artifacts/full-source/GHOSIUM-SOURCE-INSTALLER-SMOKE.json')
+
+      - name: Generate verified full-source SHA-256 manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
           $filesToHash = @(
             'artifacts/full-source/Ghosium-Browser-Source-Setup.exe',
             'artifacts/full-source/Ghosium-Browser-Source-Runtime.7z',
             'artifacts/full-source/GHOSIUM-SOURCE-BUILD.json',
-            'artifacts/full-source/GHOSIUM-BUILDER-READY.json'
+            'artifacts/full-source/GHOSIUM-BUILDER-READY.json',
+            'artifacts/full-source/GHOSIUM-SOURCE-INSTALLER-SMOKE.json'
           )
           $hashLines = foreach ($file in $filesToHash) {
             if (!(Test-Path $file -PathType Leaf)) {
-              throw "Expected full-source artifact is missing before hashing: $file"
+              throw "Expected verified full-source artifact is missing before hashing: $file"
             }
             $item = Get-Item $file
             $hash = (Get-FileHash $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()

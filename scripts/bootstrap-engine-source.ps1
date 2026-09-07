@@ -28,7 +28,15 @@ if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
   $env:DEPOT_TOOLS_WIN_TOOLCHAIN = '0'
 }
 
-$destinationPath = [IO.Path]::GetFullPath((Join-Path (Get-Location) $Destination))
+# The full-source workflow intentionally supplies an absolute persistent Windows
+# workspace. Join-Path does not treat an absolute ChildPath as replacing its
+# parent (for example, Join-Path C:\repo C:\src yields an invalid composite
+# path), so absolute and relative destinations must be resolved separately.
+if ([IO.Path]::IsPathFullyQualified($Destination)) {
+  $destinationPath = [IO.Path]::GetFullPath($Destination)
+} else {
+  $destinationPath = [IO.Path]::GetFullPath((Join-Path (Get-Location).Path $Destination))
+}
 $src = Join-Path $destinationPath 'src'
 $existingItems = @()
 if (Test-Path $destinationPath) {

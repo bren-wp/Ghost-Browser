@@ -19,6 +19,8 @@ jobs:
       - X64
       - ghosium-source-builder
     timeout-minutes: 360
+    env:
+      DEPOT_TOOLS_WIN_TOOLCHAIN: '0'
 
     steps:
       - name: Checkout Ghosium source tooling
@@ -29,51 +31,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-
-          if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
-            throw 'Ghosium full-source Windows builds require a Windows builder.'
-          }
-
-          foreach ($command in @('git', 'fetch', 'gclient', 'gn', 'autoninja')) {
-            if (!(Get-Command $command -ErrorAction SilentlyContinue)) {
-              throw "Required Chromium build command is missing from PATH: $command"
-            }
-          }
-
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (!(Test-Path $vswhere -PathType Leaf)) {
-            throw 'Visual Studio Installer vswhere.exe was not found.'
-          }
-          $vsVersion = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Workload.NativeDesktop -property installationVersion | Select-Object -First 1)
-          if (!$vsVersion) {
-            throw 'Visual Studio with Desktop development with C++ was not found.'
-          }
-          $major = [int]($vsVersion.Split('.')[0])
-          if ($major -lt 18) {
-            throw "Pinned Chromium requires Visual Studio 2026 (18.x or newer); found $vsVersion"
-          }
-
-          $workRoot = if ($env:GHOSIUM_SOURCE_WORK) {
-            [IO.Path]::GetFullPath($env:GHOSIUM_SOURCE_WORK)
-          } else {
-            [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP 'ghosium-chromium'))
-          }
-
-          $driveName = ([IO.Path]::GetPathRoot($workRoot)).TrimEnd('\').TrimEnd(':')
-          $drive = Get-PSDrive -Name $driveName
-          $reuse = Test-Path (Join-Path $workRoot 'src/.git')
-          $requiredFreeGiB = if ($reuse) { 40 } else { 110 }
-          $freeGiB = [math]::Floor($drive.Free / 1GB)
-          if ($freeGiB -lt $requiredFreeGiB) {
-            throw "Insufficient free disk for Chromium source build. Required at least ${requiredFreeGiB} GiB; found ${freeGiB} GiB on $($drive.Root)"
-          }
-
-          "work_root=$workRoot" >> $env:GITHUB_OUTPUT
-          "reuse=$($reuse.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
-          Write-Host "Source work root: $workRoot"
-          Write-Host "Reusable checkout: $reuse"
-          Write-Host "Visual Studio: $vsVersion"
-          Write-Host "Free disk: ${freeGiB} GiB"
+          New-Item -ItemType Directory -Force -Path 'artifacts/full-source' | Out-Null
+          ./scripts/verify-source-builder-host.ps1 `
+            -ReportPath 'artifacts/full-source/GHOSIUM-BUILDER-READY.json'
 
       - name: Bootstrap pinned Chromium source
         shell: pwsh
@@ -114,7 +74,6 @@ jobs:
         env:
           WORK_ROOT: ${{ steps.builder.outputs.work_root }}
           NINJA_SUMMARIZE_BUILD: '1'
-          DEPOT_TOOLS_WIN_TOOLCHAIN: '0'
         run: |
           $ErrorActionPreference = 'Stop'
           $src = Join-Path $env:WORK_ROOT 'src'
@@ -135,7 +94,6 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $src = Join-Path $env:WORK_ROOT 'src'
-          New-Item -ItemType Directory -Force -Path artifacts/full-source | Out-Null
           ./scripts/verify-engine-build-output.ps1 `
             -SourceRoot $src `
             -OutDir 'out/Ghosium' `
@@ -145,12 +103,21 @@ jobs:
           Copy-Item (Join-Path $out 'mini_installer.exe') 'artifacts/full-source/Ghosium-Browser-Source-Setup.exe' -Force
           Copy-Item (Join-Path $out 'chrome.7z') 'artifacts/full-source/Ghosium-Browser-Source-Runtime.7z' -Force
 
-          Get-FileHash 'artifacts/full-source/Ghosium-Browser-Source-Setup.exe' -Algorithm SHA256 |
-            ForEach-Object { "$($_.Hash.ToLowerInvariant())  Ghosium-Browser-Source-Setup.exe" } |
-            Set-Content 'artifacts/full-source/SHA256SUMS.txt' -Encoding ascii
-          Get-FileHash 'artifacts/full-source/Ghosium-Browser-Source-Runtime.7z' -Algorithm SHA256 |
-            ForEach-Object { "$($_.Hash.ToLowerInvariant())  Ghosium-Browser-Source-Runtime.7z" } |
-            Add-Content 'artifacts/full-source/SHA256SUMS.txt' -Encoding ascii
+          $filesToHash = @(
+            'artifacts/full-source/Ghosium-Browser-Source-Setup.exe',
+            'artifacts/full-source/Ghosium-Browser-Source-Runtime.7z',
+            'artifacts/full-source/GHOSIUM-SOURCE-BUILD.json',
+            'artifacts/full-source/GHOSIUM-BUILDER-READY.json'
+          )
+          $hashLines = foreach ($file in $filesToHash) {
+            if (!(Test-Path $file -PathType Leaf)) {
+              throw "Expected full-source artifact is missing before hashing: $file"
+            }
+            $item = Get-Item $file
+            $hash = (Get-FileHash $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($item.Name)"
+          }
+          $hashLines | Set-Content 'artifacts/full-source/SHA256SUMS.txt' -Encoding ascii
 
       - name: Upload verified full-source build
         uses: actions/upload-artifact@v4

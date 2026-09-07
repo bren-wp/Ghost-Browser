@@ -144,7 +144,26 @@ if ($resolvedWorkRoot -match '\s') {
 if ($resolvedWorkRoot -notmatch '^[A-Za-z]:\\') {
   throw "Chromium source workspace must use a local Windows drive: $resolvedWorkRoot"
 }
-New-Item -ItemType Directory -Force -Path $resolvedWorkRoot | Out-Null
+
+$workspaceExisted = Test-Path $resolvedWorkRoot -PathType Container
+$existingItems = @()
+if ($workspaceExisted) {
+  $existingItems = @(Get-ChildItem $resolvedWorkRoot -Force -ErrorAction Stop)
+} else {
+  New-Item -ItemType Directory -Force -Path $resolvedWorkRoot | Out-Null
+}
+
+$hasSourceGit = Test-Path (Join-Path $resolvedWorkRoot 'src\.git') -PathType Container
+$hasGclient = Test-Path (Join-Path $resolvedWorkRoot '.gclient') -PathType Leaf
+if ($existingItems.Count -eq 0) {
+  $reuse = $false
+  $workspaceState = 'fresh-empty'
+} elseif ($hasSourceGit -and $hasGclient) {
+  $reuse = $true
+  $workspaceState = 'reusable-complete'
+} else {
+  throw "Chromium source workspace is nonempty but incomplete. It must be empty for a fresh fetch or contain both src\.git and .gclient for reuse: $resolvedWorkRoot"
+}
 
 $driveLetter = $resolvedWorkRoot.Substring(0, 1)
 $volume = Get-Volume -DriveLetter $driveLetter -ErrorAction Stop
@@ -153,7 +172,6 @@ if (![string]::Equals([string]$volume.FileSystem, 'NTFS', [StringComparison]::Or
 }
 
 $drive = Get-PSDrive -Name $driveLetter -ErrorAction Stop
-$reuse = Test-Path (Join-Path $resolvedWorkRoot 'src\.git')
 $requiredFreeGiB = if ($reuse) { $minimumReuseFreeGiB } else { $minimumFreshFreeGiB }
 $freeGiB = [math]::Floor($drive.Free / 1GB)
 if ($freeGiB -lt $requiredFreeGiB) {
@@ -214,6 +232,7 @@ $report = [ordered]@{
   ramGiB = $ramGiB
   logicalProcessors = $logicalProcessors
   workRoot = $resolvedWorkRoot
+  workspaceState = $workspaceState
   reusableCheckout = [bool]$reuse
   fileSystem = [string]$volume.FileSystem
   freeDiskGiB = $freeGiB
@@ -246,7 +265,7 @@ if (![string]::IsNullOrWhiteSpace($env:GITHUB_OUTPUT)) {
 }
 
 Write-Host 'Ghosium full-source Windows builder preflight: OK'
-Write-Host "Workspace: $resolvedWorkRoot"
+Write-Host "Workspace: $resolvedWorkRoot ($workspaceState)"
 Write-Host "Reusable checkout: $reuse"
 Write-Host "NTFS free disk: ${freeGiB} GiB"
 Write-Host "RAM: ${ramGiB} GiB; logical processors: $logicalProcessors"

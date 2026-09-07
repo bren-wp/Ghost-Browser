@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Ghosium Search",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Sets Ghosium Search as the default search experience for Ghosium Browser.",
   "chrome_settings_overrides": {
     "search_provider": {

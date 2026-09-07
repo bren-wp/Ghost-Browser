@@ -10,6 +10,8 @@ on:
       - 'scripts/verify-source-builder-host.ps1'
       - 'scripts/bootstrap-engine-source.ps1'
       - 'scripts/verify-engine-build-output.ps1'
+      - 'scripts/verify-pinned-source-anchors.py'
+      - 'scripts/smoke-test-source-windows-installer.ps1'
       - 'docs/SOURCE_BUILDER_SETUP.md'
       - '.github/workflows/full-source-windows-build.yml'
       - '.github/workflows/source-builder-contract.yml'
@@ -22,6 +24,8 @@ on:
       - 'scripts/verify-source-builder-host.ps1'
       - 'scripts/bootstrap-engine-source.ps1'
       - 'scripts/verify-engine-build-output.ps1'
+      - 'scripts/verify-pinned-source-anchors.py'
+      - 'scripts/smoke-test-source-windows-installer.ps1'
       - 'docs/SOURCE_BUILDER_SETUP.md'
       - '.github/workflows/full-source-windows-build.yml'
       - '.github/workflows/source-builder-contract.yml'
@@ -38,7 +42,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          fetch-depth: 1
 
       - name: Validate pinned revision files
         shell: bash
@@ -89,14 +96,15 @@ jobs:
           print(f'Pinned Chromium DEPS and Ghosium agree on depot_tools {actual}.')
           PY
 
-      - name: Validate builder PowerShell
+      - name: Validate builder tooling syntax
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           foreach ($path in @(
             'scripts/verify-source-builder-host.ps1',
             'scripts/bootstrap-engine-source.ps1',
-            'scripts/verify-engine-build-output.ps1'
+            'scripts/verify-engine-build-output.ps1',
+            'scripts/smoke-test-source-windows-installer.ps1'
           )) {
             $tokens = $null
             $errors = $null
@@ -109,6 +117,10 @@ jobs:
               $errors | ForEach-Object { Write-Error $_.Message }
               throw "PowerShell parser errors found in $path"
             }
+          }
+          python3 -m py_compile scripts/verify-pinned-source-anchors.py
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Pinned-source anchor verifier has Python syntax errors.'
           }
 
       - name: Verify pinned Chromium host requirements
@@ -208,6 +220,43 @@ jobs:
             throw 'Source-built runtime smoke must not disable the Chromium sandbox.'
           }
 
+      - name: Verify source-built installer round-trip gate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $smoke = Get-Content 'scripts/smoke-test-source-windows-installer.ps1' -Raw
+          foreach ($required in @(
+            "'Brendigo\Ghosium'",
+            "'Ghosium Browser'",
+            "'--do-not-launch-chrome'",
+            "'--do-not-register-for-update-launch'",
+            "'--uninstall'",
+            "'--force-uninstall'",
+            "'--delete-profile'",
+            "'--headless=new'",
+            "'--dump-dom'",
+            'ghosium-source-installed-runtime-ok',
+            'ProductName',
+            'CompanyName',
+            'UninstallString',
+            'sandboxDisabled = $false',
+            'miniInstallerSha256',
+            'applicationDirectoryRemoved',
+            'registrationRemoved',
+            'defaultUserDataRemoved'
+          )) {
+            if (!$smoke.Contains($required)) {
+              throw "Source-built installer smoke is missing required invariant: $required"
+            }
+          }
+          if ($smoke -match "(?i)'--no-sandbox'") {
+            throw 'Installed source-built runtime smoke must not disable the Chromium sandbox.'
+          }
+          if (!$smoke.Contains('Refusing destructive source-installer smoke because a Ghosium installation already exists') -or
+              !$smoke.Contains('Refusing destructive source-installer smoke because Ghosium user data already exists')) {
+            throw 'Source-built installer smoke must refuse to overwrite an existing Ghosium installation or user profile.'
+          }
+
       - name: Verify full-source workflow remains manual and self-hosted
         shell: pwsh
         run: |
@@ -226,6 +275,7 @@ jobs:
             'persist-credentials: false',
             'verify-source-builder-host.ps1',
             'GHOSIUM-BUILDER-READY.json',
+            'verify-pinned-source-anchors.py',
             'bootstrap-engine-source.ps1',
             'apply-engine-branding.ps1',
             'configure-engine-build.ps1',
@@ -233,6 +283,9 @@ jobs:
             'verify-engine-build-output.ps1',
             '-RunRuntimeSmoke',
             'GHOSIUM-SOURCE-BUILD.json',
+            'smoke-test-source-windows-installer.ps1',
+            'GHOSIUM-SOURCE-INSTALLER-SMOKE.json',
+            'Generate verified full-source SHA-256 manifest',
             'SHA256SUMS.txt',
             'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02'
           )) {
@@ -268,4 +321,6 @@ jobs:
           grep -Fq 'verify-source-builder-host.ps1' "$doc"
           grep -Fq 'autoninja -C out/Ghosium chrome mini_installer' "$doc"
           grep -Fq 'runtime smoke' "$doc"
+          grep -Fq 'source-built installer' "$doc"
+          grep -Fq 'GHOSIUM-SOURCE-INSTALLER-SMOKE.json' "$doc"
           grep -Fq 'Do not commit runner tokens' "$doc"

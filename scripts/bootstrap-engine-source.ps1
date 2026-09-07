@@ -95,7 +95,21 @@ if ($LASTEXITCODE -ne 0) {
 
 Push-Location $destinationPath
 try {
-  $syncArguments = @('sync', '--with_branch_heads', '--with_tags', '--revision', "src@$sourceRevision")
+  # A persistent self-hosted checkout contains many gclient-managed Git
+  # dependencies that are not cleaned by `git reset/clean` in src alone. Force
+  # every dependency back to the exact DEPS state before hooks or compilation so
+  # stale local edits and removed dependency trees cannot influence a later
+  # verified Ghosium build.
+  $syncArguments = @(
+    'sync',
+    '--reset',
+    '--delete_unversioned_trees',
+    '--force',
+    '--with_branch_heads',
+    '--with_tags',
+    '--revision',
+    "src@$sourceRevision"
+  )
   if ($SkipHooks) {
     $syncArguments += '--nohooks'
   }

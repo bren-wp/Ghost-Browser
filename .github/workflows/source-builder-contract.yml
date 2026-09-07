@@ -185,7 +185,8 @@ jobs:
           foreach ($required in @(
             '[IO.Path]::IsPathFullyQualified($Destination)',
             '[IO.Path]::GetFullPath($Destination)',
-            "[IO.Path]::GetFullPath((Join-Path (Get-Location).Path `$Destination))"
+            "[IO.Path]::GetFullPath((Join-Path (Get-Location).Path `$Destination))",
+            'git -C $src clean -ffd'
           )) {
             if (!$bootstrap.Contains($required)) {
               throw "Chromium bootstrap is missing absolute/relative workspace guard: $required"
@@ -193,6 +194,29 @@ jobs:
           }
           if ($bootstrap.Contains("[IO.Path]::GetFullPath((Join-Path (Get-Location) `$Destination))")) {
             throw 'Chromium bootstrap must not append a fully-qualified Windows destination to the current repository path.'
+          }
+
+          $syncMatch = [regex]::Match(
+            $bootstrap,
+            '(?s)\$syncArguments\s*=\s*@\((?<body>.*?)\)'
+          )
+          if (!$syncMatch.Success) {
+            throw 'Chromium bootstrap must define an explicit gclient sync argument list.'
+          }
+          $syncBody = $syncMatch.Groups['body'].Value
+          foreach ($requiredSyncArgument in @(
+            "'sync'",
+            "'--reset'",
+            "'--delete_unversioned_trees'",
+            "'--force'",
+            "'--with_branch_heads'",
+            "'--with_tags'",
+            "'--revision'",
+            'src@$sourceRevision'
+          )) {
+            if (!$syncBody.Contains($requiredSyncArgument)) {
+              throw "Persistent Chromium gclient sync is missing cleanup/pin invariant: $requiredSyncArgument"
+            }
           }
 
       - name: Verify full-source runtime gate

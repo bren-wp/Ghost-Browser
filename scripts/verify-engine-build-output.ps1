@@ -6,7 +6,10 @@ param(
   [string]$OutDir = 'out/Ghosium',
 
   [Parameter(Mandatory = $false)]
-  [string]$ProvenancePath
+  [string]$ProvenancePath,
+
+  [Parameter(Mandatory = $false)]
+  [switch]$RunRuntimeSmoke
 )
 
 $ErrorActionPreference = 'Stop'
@@ -109,8 +112,21 @@ if (!$chromeInfo.ProductVersion) {
   throw 'chrome.exe ProductVersion is empty.'
 }
 
+$setup = Get-Item (Join-Path $outPath 'setup.exe')
+$setupInfo = $setup.VersionInfo
 $installer = Get-Item (Join-Path $outPath 'mini_installer.exe')
 $installerInfo = $installer.VersionInfo
+foreach ($binaryInfo in @(
+  [pscustomobject]@{ Name = 'setup.exe'; Info = $setupInfo },
+  [pscustomobject]@{ Name = 'mini_installer.exe'; Info = $installerInfo }
+)) {
+  if ($binaryInfo.Info.ProductName -and [string]$binaryInfo.Info.ProductName -match '(?i)\bChromium\b|Google Chrome') {
+    throw "$($binaryInfo.Name) exposes legacy product branding in ProductName: '$($binaryInfo.Info.ProductName)'"
+  }
+  if ($binaryInfo.Info.CompanyName -and [string]$binaryInfo.Info.CompanyName -match '(?i)Google LLC') {
+    throw "$($binaryInfo.Name) exposes legacy publisher metadata: '$($binaryInfo.Info.CompanyName)'"
+  }
+}
 if ($installerInfo.ProductName -and [string]$installerInfo.ProductName -notmatch 'Ghosium') {
   throw "mini_installer.exe exposes unexpected ProductName: '$($installerInfo.ProductName)'"
 }
@@ -137,6 +153,45 @@ if ($thirdPartyChanges) {
   throw 'Full-source build verification detected modified third_party sources.'
 }
 
+$runtimeSmokePassed = $false
+if ($RunRuntimeSmoke) {
+  $smokeRoot = Join-Path ([IO.Path]::GetTempPath()) "ghosium-source-smoke-$PID"
+  $profile = Join-Path $smokeRoot 'profile'
+  $stdout = Join-Path $smokeRoot 'stdout.txt'
+  $stderr = Join-Path $smokeRoot 'stderr.txt'
+  New-Item -ItemType Directory -Force -Path $smokeRoot | Out-Null
+  try {
+    $runtimeArgs = @(
+      '--headless=new',
+      '--disable-gpu',
+      '--disable-sync',
+      '--no-pings',
+      '--no-first-run',
+      "--user-data-dir=$profile",
+      '--dump-dom',
+      'data:text/html,<html><body>ghosium-source-runtime-ok</body></html>'
+    )
+    $process = Start-Process `
+      -FilePath $chrome.FullName `
+      -ArgumentList $runtimeArgs `
+      -Wait `
+      -PassThru `
+      -RedirectStandardOutput $stdout `
+      -RedirectStandardError $stderr
+
+    $smokeOutput = if (Test-Path $stdout -PathType Leaf) { Get-Content $stdout -Raw } else { '' }
+    $smokeError = if (Test-Path $stderr -PathType Leaf) { Get-Content $stderr -Raw } else { '' }
+    if ($process.ExitCode -ne 0 -or !$smokeOutput.Contains('ghosium-source-runtime-ok')) {
+      Write-Host $smokeOutput
+      Write-Host $smokeError
+      throw "Source-built Ghosium runtime smoke failed with exit code $($process.ExitCode)."
+    }
+    $runtimeSmokePassed = $true
+  } finally {
+    Remove-Item $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+
 $filesToHash = @(
   'chrome.exe',
   'chrome.dll',
@@ -158,6 +213,7 @@ if (!$ProvenancePath) {
 }
 
 $provenance = [ordered]@{
+  schemaVersion = 2
   product = 'Ghosium Browser'
   ghosiumVersion = $ghosiumVersion
   architecture = 'windows-x64'
@@ -165,7 +221,13 @@ $provenance = [ordered]@{
   engineProductVersion = [string]$chromeInfo.ProductVersion
   publisher = [string]$chromeInfo.CompanyName
   chromeProductName = [string]$chromeInfo.ProductName
+  setupProductName = [string]$setupInfo.ProductName
   installerProductName = [string]$installerInfo.ProductName
+  runtimeSmoke = [ordered]@{
+    requested = [bool]$RunRuntimeSmoke
+    passed = $runtimeSmokePassed
+    sandboxDisabled = $false
+  }
   uninstall = [ordered]@{
     supported = $true
     mechanism = 'setup.exe --uninstall via Windows registered uninstall command'
@@ -177,7 +239,10 @@ $provenance = [ordered]@{
 }
 $provenance | ConvertTo-Json -Depth 5 | Set-Content $ProvenancePath -Encoding utf8
 
-Write-Host "Ghosium full-source Windows binary verification: OK"
+Write-Host 'Ghosium full-source Windows binary verification: OK'
 Write-Host "Engine version: $($chromeInfo.ProductVersion)"
+if ($RunRuntimeSmoke) {
+  Write-Host 'Runtime smoke: passed without disabling the browser sandbox.'
+}
 Write-Host 'Uninstall: supported through registered setup.exe --uninstall flow; no standalone uninstall.exe'
 Write-Host "Provenance: $ProvenancePath"
